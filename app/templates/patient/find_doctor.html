@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+{% block title %}Find a Doctor{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/patient/find-doctor" class="sidebar-link active"><span class="icon">🔍</span> Find Doctor</a>
+    <a href="/patient/appointments" class="sidebar-link"><span class="icon">📅</span> Appointments</a>
+    <a href="/patient/prescriptions" class="sidebar-link"><span class="icon">💊</span> Prescriptions</a>
+    <a href="/patient/lab-reports" class="sidebar-link"><span class="icon">🧪</span> Lab Reports</a>
+    <a href="/patient/profile" class="sidebar-link"><span class="icon">👤</span> My Profile</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Find a Doctor</h1>
+      <p class="text-muted">Search by specialty, hospital, or symptoms</p>
+    </div>
+
+    <!-- Symptom Recommender Box -->
+    <div class="card mb-3" style="border-left: 4px solid var(--c-primary);">
+      <h3 style="margin-bottom:0.5rem;font-size:1.1rem">🤖 Symptom Recommendation Assistant</h3>
+      <p class="text-muted" style="font-size:0.875rem;margin-bottom:1rem">
+        Select symptoms to receive recommended doctor specialties.
+        <em style="color:#e11d48;font-weight:600">Disclaimer: Non-diagnostic tool only. In emergencies, call 999 or visit the nearest ER immediately.</em>
+      </p>
+      <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+        <label><input type="checkbox" name="symptom" value="chest_pain"> Chest Pain / Pressure</label>
+        <label><input type="checkbox" name="symptom" value="shortness_of_breath"> Shortness of Breath</label>
+        <label><input type="checkbox" name="symptom" value="severe_headache"> Severe Headache</label>
+        <label><input type="checkbox" name="symptom" value="skin_rash"> Skin Rash / Itching</label>
+        <label><input type="checkbox" name="symptom" value="joint_pain"> Joint Pain</label>
+        <label><input type="checkbox" name="symptom" value="fever"> High Fever</label>
+        <label><input type="checkbox" name="symptom" value="abdominal_pain"> Stomach / Abdominal Pain</label>
+      </div>
+      <button class="btn btn-secondary btn-sm mt-3" onclick="checkSymptoms()">Get Specialty Recommendation</button>
+      <div id="recommendation-result" style="margin-top:0.75rem"></div>
+    </div>
+
+    <!-- Filter Form -->
+    <div class="card mb-3">
+      <div class="grid-3">
+        <div class="form-group">
+          <label>Hospital</label>
+          <select id="filter-hospital">
+            <option value="">All Hospitals</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Specialty</label>
+          <select id="filter-specialty">
+            <option value="">All Specialties</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Doctor Name</label>
+          <input type="text" id="filter-name" placeholder="Search doctor name...">
+        </div>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary" onclick="searchDoctors()">Search Doctors</button>
+        <button class="btn btn-ghost" onclick="resetFilters()">Reset</button>
+      </div>
+    </div>
+
+    <!-- Doctors Grid -->
+    <div id="doctors-list" class="grid-2">
+      <div class="empty"><div class="empty-icon">🔍</div><p>Loading doctors...</p></div>
+    </div>
+  </main>
+</div>
+
+<!-- Booking Modal -->
+<div id="booking-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999;display:flex;align-items:center;justify-content:center;">
+  <div class="card" style="width:100%;max-width:480px;margin:1rem">
+    <h2 style="margin-bottom:1rem">Book Appointment</h2>
+    <input type="hidden" id="book-doctor-id">
+    <div class="form-group">
+      <label>Doctor</label>
+      <input type="text" id="book-doctor-name" readonly disabled>
+    </div>
+    <div class="form-group">
+      <label>Hospital</label>
+      <select id="book-hospital-id"></select>
+    </div>
+    <div class="form-group">
+      <label>Date & Time</label>
+      <input type="datetime-local" id="book-datetime">
+    </div>
+    <div class="form-group">
+      <label>Reason / Symptoms</label>
+      <textarea id="book-reason" rows="2" placeholder="Briefly describe your symptoms..."></textarea>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn btn-primary" onclick="submitBooking()">Confirm Booking</button>
+      <button class="btn btn-ghost" onclick="closeBookingModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allHospitals = [];
+let allSpecialties = [];
+
+async function loadCatalogs(){
+  const [hRes, sRes] = await Promise.all([
+    api('GET', '/api/hospitals'),
+    api('GET', '/api/catalogs/specialties')
+  ]);
+  if(hRes.ok && hRes.data.data){
+    allHospitals = hRes.data.data.hospitals || [];
+    const hSelect = document.getElementById('filter-hospital');
+    allHospitals.forEach(h => {
+      const opt = document.createElement('option');
+      opt.value = h.id;
+      opt.textContent = h.name;
+      hSelect.appendChild(opt);
+    });
+  }
+  if(sRes.ok && sRes.data.data){
+    allSpecialties = sRes.data.data.specialties || [];
+    const sSelect = document.getElementById('filter-specialty');
+    allSpecialties.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      sSelect.appendChild(opt);
+    });
+  }
+  searchDoctors();
+}
+
+async function searchDoctors(){
+  const hospId = document.getElementById('filter-hospital').value;
+  const specId = document.getElementById('filter-specialty').value;
+  const name = document.getElementById('filter-name').value.trim();
+
+  let url = '/api/doctors?';
+  if(hospId) url += `hospital_id=${hospId}&`;
+  if(specId) url += `specialty_id=${specId}&`;
+  if(name) url += `name=${encodeURIComponent(name)}&`;
+
+  const list = document.getElementById('doctors-list');
+  list.innerHTML = '<div class="empty"><p>Loading doctors...</p></div>';
+
+  const {ok, data} = await api('GET', url);
+  if(!ok || !data.data.doctors || data.data.doctors.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">👨‍⚕️</div><p>No doctors found matching criteria.</p></div>';
+    return;
+  }
+
+  list.innerHTML = data.data.doctors.map(d => `
+    <div class="card">
+      <div class="flex" style="align-items:flex-start;justify-content:space-between;margin-bottom:0.75rem">
+        <div>
+          <h3 style="font-size:1.15rem;font-weight:700">${d.title || 'Dr.'} ${d.name}</h3>
+          <span class="badge badge-info">${d.specialty || 'General'}</span>
+        </div>
+        <div style="font-weight:700;color:var(--c-primary);font-size:1.1rem">
+          ৳${d.consultation_fee}
+        </div>
+      </div>
+      <p class="text-muted" style="font-size:0.875rem;margin-bottom:0.5rem">
+        <strong>Experience:</strong> ${d.experience_years} years | <strong>License:</strong> ${d.license_number}
+      </p>
+      ${d.bio ? `<p style="font-size:0.875rem;color:var(--c-muted);margin-bottom:1rem">${d.bio}</p>` : ''}
+      <button class="btn btn-primary btn-sm" onclick="openBookingModal(${d.id}, '${d.name.replace(/'/g, "\\'")}')">Book Appointment</button>
+    </div>
+  `).join('');
+}
+
+function resetFilters(){
+  document.getElementById('filter-hospital').value = '';
+  document.getElementById('filter-specialty').value = '';
+  document.getElementById('filter-name').value = '';
+  searchDoctors();
+}
+
+async function checkSymptoms(){
+  const checked = Array.from(document.querySelectorAll('input[name="symptom"]:checked')).map(c => c.value);
+  const container = document.getElementById('recommendation-result');
+  if(checked.length === 0){
+    container.innerHTML = '<span class="text-muted">Please select at least one symptom.</span>';
+    return;
+  }
+  const {ok, data} = await api('POST', '/api/symptoms/recommend', {symptoms: checked});
+  if(ok && data.data){
+    const rec = data.data;
+    let html = `<div style="background:var(--c-bg-subtle,#f1f5f9);padding:0.75rem;border-radius:8px;margin-top:0.5rem">
+      <strong>Recommended Specialties:</strong> ${(rec.recommended_specialties || []).join(', ') || 'General Medicine'}<br>
+      <small style="color:var(--c-muted)">${rec.reasoning || ''}</small>
+    </div>`;
+    if(rec.emergency_warning){
+      html += `<div style="background:#fee2e2;color:#991b1b;padding:0.75rem;border-radius:8px;margin-top:0.5rem;font-weight:600">
+        🚨 Emergency Warning: ${rec.emergency_warning}
+      </div>`;
+    }
+    container.innerHTML = html;
+  }
+}
+
+function openBookingModal(doctorId, doctorName){
+  const user = getUser();
+  if(!user){
+    toast('Please log in to book an appointment', 'warn');
+    setTimeout(() => location.href = '/auth/login', 1500);
+    return;
+  }
+  document.getElementById('book-doctor-id').value = doctorId;
+  document.getElementById('book-doctor-name').value = doctorName;
+  const select = document.getElementById('book-hospital-id');
+  select.innerHTML = allHospitals.map(h => `<option value="${h.id}">${h.name}</option>`).join('');
+
+  // Set default datetime to tomorrow 10:00 AM
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  tomorrow.setHours(10, 0, 0, 0);
+  document.getElementById('book-datetime').value = tomorrow.toISOString().slice(0, 16);
+
+  document.getElementById('booking-modal').style.display = 'flex';
+}
+
+function closeBookingModal(){
+  document.getElementById('booking-modal').style.display = 'none';
+}
+
+async function submitBooking(){
+  const doctorId = document.getElementById('book-doctor-id').value;
+  const hospitalId = document.getElementById('book-hospital-id').value;
+  const scheduledStart = document.getElementById('book-datetime').value;
+  const reason = document.getElementById('book-reason').value;
+
+  if(!scheduledStart){
+    toast('Please select appointment date and time', 'warn');
+    return;
+  }
+
+  const {ok, data, error} = await api('POST', '/api/appointments', {
+    doctor_id: parseInt(doctorId),
+    hospital_id: parseInt(hospitalId),
+    scheduled_start: new Date(scheduledStart).toISOString(),
+    appointment_type: 'in_person',
+    reason: reason
+  });
+
+  if(ok){
+    toast('Appointment booked successfully!', 'success');
+    closeBookingModal();
+    setTimeout(() => location.href = '/patient/appointments', 1200);
+  } else {
+    toast(error || 'Failed to book appointment', 'error');
+  }
+}
+
+document.getElementById('booking-modal').style.display = 'none';
+loadCatalogs();
+</script>
+{% endblock %}

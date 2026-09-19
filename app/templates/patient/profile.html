@@ -1,0 +1,302 @@
+{% extends "base.html" %}
+{% block title %}My Profile{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/patient/appointments" class="sidebar-link">
+      <span class="icon">📅</span> My Appointments
+    </a>
+    <a href="/patient/prescriptions" class="sidebar-link">
+      <span class="icon">💊</span> Prescriptions
+    </a>
+    <a href="/patient/lab-reports" class="sidebar-link">
+      <span class="icon">🧪</span> Lab Reports
+    </a>
+    <a href="/patient/find-doctor" class="sidebar-link">
+      <span class="icon">🔍</span> Find Doctor
+    </a>
+    <a href="/patient/profile" class="sidebar-link active">
+      <span class="icon">👤</span> My Profile
+    </a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>My Profile & Health Records</h1>
+      <p class="text-muted">Manage your personal information and view your health history</p>
+    </div>
+
+    <!-- Profile Information Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Personal Information</h2>
+        <button class="btn btn-secondary btn-sm" onclick="toggleEditMode()">Edit Profile</button>
+      </div>
+
+      <form id="profile-form">
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="full_name">Full Name</label>
+            <input type="text" id="full_name" disabled>
+          </div>
+          <div class="form-group">
+            <label for="patient_code">Patient Code</label>
+            <input type="text" id="patient_code" disabled>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="email">Email</label>
+            <input type="email" id="email" disabled>
+          </div>
+          <div class="form-group">
+            <label for="phone">Phone</label>
+            <input type="tel" id="phone" disabled>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="date_of_birth">Date of Birth</label>
+            <input type="date" id="date_of_birth" disabled>
+          </div>
+          <div class="form-group">
+            <label for="gender">Gender</label>
+            <select id="gender" disabled>
+              <option value="">Select Gender</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="address">Address</label>
+          <textarea id="address" rows="2" disabled></textarea>
+        </div>
+
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="blood_group">Blood Group</label>
+            <select id="blood_group" disabled>
+              <option value="">Select Blood Group</option>
+              <option value="A+">A+</option>
+              <option value="A-">A-</option>
+              <option value="B+">B+</option>
+              <option value="B-">B-</option>
+              <option value="AB+">AB+</option>
+              <option value="AB-">AB-</option>
+              <option value="O+">O+</option>
+              <option value="O-">O-</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Emergency Contact</h3>
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="emergency_contact_name">Contact Name</label>
+            <input type="text" id="emergency_contact_name" placeholder="e.g. John Doe" disabled>
+          </div>
+          <div class="form-group">
+            <label for="emergency_contact_phone">Contact Phone</label>
+            <input type="tel" id="emergency_contact_phone" placeholder="e.g. +8801712345678" disabled>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="basic_health_info">Medical History / Allergies / Chronic Conditions</label>
+          <textarea id="basic_health_info" rows="3" placeholder="e.g. Allergic to penicillin, Diabetic Type 2" disabled></textarea>
+        </div>
+
+        <div id="save-controls" style="display: none; margin-top: 1rem;">
+          <button type="button" class="btn btn-primary" onclick="saveProfile()">Save Changes</button>
+          <button type="button" class="btn btn-ghost" onclick="cancelEdit()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Health Records Timeline -->
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Health Records Timeline</h2>
+        <div class="flex gap-1">
+          <button class="btn btn-ghost btn-sm" onclick="filterTimeline('all')" id="filter-all">All</button>
+          <button class="btn btn-ghost btn-sm" onclick="filterTimeline('appointments')" id="filter-appointments">Appointments</button>
+          <button class="btn btn-ghost btn-sm" onclick="filterTimeline('prescriptions')" id="filter-prescriptions">Prescriptions</button>
+        </div>
+      </div>
+      <div id="timeline-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+
+let isEditMode = false;
+let currentFilter = 'all';
+let timelineData = { appointments: [], prescriptions: [] };
+
+async function loadProfile(){
+  const {ok, data} = await api('GET', '/api/appointments');
+  if(!ok) return;
+
+  // Load patient profile from user session data and API
+  const profile = user.patient_profile || {};
+
+  document.getElementById('full_name').value = user.full_name || '';
+  document.getElementById('patient_code').value = profile.patient_code || '';
+  document.getElementById('email').value = user.email || '';
+  document.getElementById('phone').value = user.phone || '';
+  document.getElementById('date_of_birth').value = profile.date_of_birth || '';
+  document.getElementById('gender').value = profile.gender || '';
+  document.getElementById('address').value = profile.address || '';
+  document.getElementById('blood_group').value = profile.blood_group || '';
+  document.getElementById('emergency_contact_name').value = profile.emergency_contact_name || '';
+  document.getElementById('emergency_contact_phone').value = profile.emergency_contact_phone || '';
+  document.getElementById('basic_health_info').value = profile.basic_health_info || '';
+}
+
+function toggleEditMode(){
+  isEditMode = !isEditMode;
+  const fields = ['date_of_birth', 'gender', 'address', 'blood_group', 'emergency_contact_name', 'emergency_contact_phone', 'basic_health_info'];
+  fields.forEach(f => document.getElementById(f).disabled = !isEditMode);
+  document.getElementById('save-controls').style.display = isEditMode ? 'block' : 'none';
+  document.querySelector('.card-header button').textContent = isEditMode ? 'Cancel Edit' : 'Edit Profile';
+  if(isEditMode){
+    document.querySelector('.card-header button').onclick = cancelEdit;
+  } else {
+    document.querySelector('.card-header button').onclick = toggleEditMode;
+  }
+}
+
+function cancelEdit(){
+  isEditMode = false;
+  loadProfile();
+  toggleEditMode();
+}
+
+async function saveProfile(){
+  const payload = {
+    date_of_birth: document.getElementById('date_of_birth').value || null,
+    gender: document.getElementById('gender').value || null,
+    address: document.getElementById('address').value || null,
+    blood_group: document.getElementById('blood_group').value || null,
+    emergency_contact_name: document.getElementById('emergency_contact_name').value || null,
+    emergency_contact_phone: document.getElementById('emergency_contact_phone').value || null,
+    basic_health_info: document.getElementById('basic_health_info').value || null,
+  };
+
+  const {ok, data, error} = await api('POST', '/api/patient/profile', payload);
+  if(ok){
+    toast('Profile updated successfully', 'success');
+    // Update session storage
+    const updatedUser = {...user, patient_profile: data.data};
+    sessionStorage.setItem('nirog_user', JSON.stringify(updatedUser));
+    toggleEditMode();
+  } else {
+    toast(data?.message || error || 'Failed to update profile', 'error');
+  }
+}
+
+async function loadTimeline(){
+  const [apptsResp, rxsResp] = await Promise.all([
+    api('GET', '/api/appointments'),
+    api('GET', '/api/prescriptions')
+  ]);
+
+  if(apptsResp.ok && apptsResp.data.data){
+    timelineData.appointments = apptsResp.data.data.appointments;
+  }
+  if(rxsResp.ok && rxsResp.data.data){
+    timelineData.prescriptions = rxsResp.data.data.prescriptions;
+  }
+
+  renderTimeline();
+}
+
+function renderTimeline(){
+  const list = document.getElementById('timeline-list');
+  let items = [];
+
+  if(currentFilter === 'all' || currentFilter === 'appointments'){
+    items.push(...timelineData.appointments.map(a => ({
+      type: 'appointment',
+      date: new Date(a.scheduled_start),
+      title: `Appointment with ${a.doctor_name}`,
+      subtitle: a.hospital_name,
+      status: a.status,
+      badge: a.status,
+      id: a.id
+    })));
+  }
+
+  if(currentFilter === 'all' || currentFilter === 'prescriptions'){
+    items.push(...timelineData.prescriptions.map(p => ({
+      type: 'prescription',
+      date: new Date(p.finalized_at || p.created_at),
+      title: `Prescription ${p.prescription_code}`,
+      subtitle: `By ${p.doctor_name}`,
+      status: p.status,
+      badge: p.status,
+      id: p.id
+    })));
+  }
+
+  items.sort((a, b) => b.date - a.date);
+
+  if(items.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📋</div><p>No health records found</p></div>';
+    return;
+  }
+
+  list.innerHTML = '<div style="padding: 1rem;">' + items.map(item => `
+    <div class="timeline-item" style="display: flex; gap: 1rem; padding: 1rem 0; border-bottom: 1px solid var(--c-border);">
+      <div style="flex-shrink: 0; width: 100px; font-size: 0.875rem; color: var(--c-muted);">
+        ${item.date.toLocaleDateString()}<br>
+        <small>${item.date.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small>
+      </div>
+      <div style="flex: 1;">
+        <div style="font-weight: 600; margin-bottom: 0.25rem;">${item.title}</div>
+        <div style="font-size: 0.875rem; color: var(--c-muted);">${item.subtitle}</div>
+      </div>
+      <div style="flex-shrink: 0;">
+        <span class="badge badge-${item.status==='completed'||item.status==='finalized'?'success':item.status==='cancelled'?'danger':'neutral'}">${item.badge}</span>
+      </div>
+    </div>
+  `).join('') + '</div>';
+}
+
+function filterTimeline(filter){
+  currentFilter = filter;
+  document.querySelectorAll('[id^="filter-"]').forEach(btn => {
+    btn.style.background = 'transparent';
+    btn.style.color = 'var(--c-muted)';
+  });
+  document.getElementById('filter-'+filter).style.background = 'var(--c-primary-lt)';
+  document.getElementById('filter-'+filter).style.color = 'var(--c-primary)';
+  renderTimeline();
+}
+
+loadProfile();
+loadTimeline();
+filterTimeline('all');
+</script>
+{% endblock %}

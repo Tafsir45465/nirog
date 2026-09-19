@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}My Prescriptions{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/patient/appointments" class="sidebar-link"><span class="icon">📅</span> Appointments</a>
+    <a href="/patient/prescriptions" class="sidebar-link active"><span class="icon">💊</span> Prescriptions</a>
+    <a href="/patient/lab-reports" class="sidebar-link"><span class="icon">🧪</span> Lab Reports</a>
+    <a href="/patient/find-doctor" class="sidebar-link"><span class="icon">🔍</span> Find Doctor</a>
+    <a href="/patient/profile" class="sidebar-link"><span class="icon">👤</span> My Profile</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>My Prescriptions</h1>
+      <p class="text-muted">Digital prescriptions and test orders</p>
+    </div>
+
+    <div class="card">
+      <div id="prescriptions-list">
+        <div class="empty"><div class="empty-icon">💊</div><p>Loading prescriptions...</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+
+async function loadPrescriptions(){
+  const {ok, data} = await api('GET', '/api/prescriptions');
+  const list = document.getElementById('prescriptions-list');
+  if(!ok || !data.data.prescriptions || data.data.prescriptions.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">💊</div><p>No prescriptions recorded yet.</p></div>';
+    return;
+  }
+
+  const rxs = data.data.prescriptions;
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Doctor</th>
+            <th>Hospital</th>
+            <th>Status</th>
+            <th>Date</th>
+            <th>Download</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rxs.map(r => `
+            <tr>
+              <td><strong>${r.prescription_code}</strong></td>
+              <td>${r.doctor_name}</td>
+              <td>${r.hospital_name}</td>
+              <td><span class="badge badge-${r.status==='finalized'?'success':'warn'}">${r.status}</span></td>
+              <td>${r.finalized_at ? new Date(r.finalized_at).toLocaleDateString() : 'Draft'}</td>
+              <td>
+                <a href="/api/prescriptions/${r.id}/pdf" target="_blank" class="btn btn-secondary btn-sm">PDF</a>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+loadPrescriptions();
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Patient Dashboard{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link active">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/patient/appointments" class="sidebar-link">
+      <span class="icon">📅</span> My Appointments
+    </a>
+    <a href="/patient/prescriptions" class="sidebar-link">
+      <span class="icon">💊</span> Prescriptions
+    </a>
+    <a href="/patient/lab-reports" class="sidebar-link">
+      <span class="icon">🧪</span> Lab Reports
+    </a>
+    <a href="/patient/find-doctor" class="sidebar-link">
+      <span class="icon">🔍</span> Find Doctor
+    </a>
+    <a href="/patient/profile" class="sidebar-link">
+      <span class="icon">👤</span> My Profile
+    </a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Welcome, <span id="patient-name">Patient</span></h1>
+      <p>Your health dashboard and appointment center</p>
+    </div>
+
+    <div class="grid-4">
+      <div class="stat-card">
+        <div class="val" id="upcoming-count">-</div>
+        <div class="lbl">Upcoming</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="completed-count">-</div>
+        <div class="lbl">Completed</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="prescriptions-count">-</div>
+        <div class="lbl">Prescriptions</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" style="font-size:1.5rem">
+          <span id="next-token">-</span>
+        </div>
+        <div class="lbl">Current Token</div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Upcoming Appointments</h2>
+        <a href="/patient/find-doctor" class="btn btn-primary btn-sm">Book New</a>
+      </div>
+      <div id="appointments-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Recent Prescriptions</h2>
+        <a href="/patient/prescriptions" class="btn btn-secondary btn-sm">View All</a>
+      </div>
+      <div id="prescriptions-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+document.getElementById('patient-name').textContent = user.full_name;
+
+async function loadDashboard(){
+  const [appts, rxs] = await Promise.all([
+    api('GET', '/api/appointments'),
+    api('GET', '/api/prescriptions')
+  ]);
+
+  if(appts.ok && appts.data.data){
+    const all = appts.data.data.appointments;
+    const upcoming = all.filter(a => ['booked','confirmed','checked_in'].includes(a.status));
+    const completed = all.filter(a => a.status === 'completed');
+    document.getElementById('upcoming-count').textContent = upcoming.length;
+    document.getElementById('completed-count').textContent = completed.length;
+
+    const list = document.getElementById('appointments-list');
+    if(upcoming.length === 0){
+      list.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><p>No upcoming appointments</p></div>';
+    } else {
+      list.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Doctor</th><th>Hospital</th><th>Status</th><th></th></tr></thead><tbody>' +
+        upcoming.slice(0,5).map(a => `<tr>
+          <td>${new Date(a.scheduled_start).toLocaleString('en-US', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+          <td>${a.doctor_name}</td>
+          <td>${a.hospital_name}</td>
+          <td><span class="badge badge-info">${a.status}</span></td>
+          <td><a href="/patient/appointments/${a.id}" class="btn btn-ghost btn-sm">View</a></td>
+        </tr>`).join('') +
+        '</tbody></table></div>';
+    }
+  }
+
+  if(rxs.ok && rxs.data.data){
+    const all = rxs.data.data.prescriptions;
+    document.getElementById('prescriptions-count').textContent = all.length;
+    const list = document.getElementById('prescriptions-list');
+    if(all.length === 0){
+      list.innerHTML = '<div class="empty"><div class="empty-icon">💊</div><p>No prescriptions yet</p></div>';
+    } else {
+      list.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Date</th><th>Doctor</th><th>Diagnosis</th><th>Status</th><th></th></tr></thead><tbody>' +
+        all.slice(0,5).map(p => `<tr>
+          <td>${new Date(p.finalized_at || p.created_at).toLocaleDateString()}</td>
+          <td>${p.doctor_name}</td>
+          <td>${(p.diagnosis_summary || 'N/A').substring(0,40)}</td>
+          <td><span class="badge badge-${p.status==='finalized'?'success':'neutral'}">${p.status}</span></td>
+          <td><a href="/patient/prescriptions/${p.id}" class="btn btn-ghost btn-sm">View</a></td>
+        </tr>`).join('') +
+        '</tbody></table></div>';
+    }
+  }
+}
+
+loadDashboard();
+</script>
+{% endblock %}

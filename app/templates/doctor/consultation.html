@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block title %}Doctor Consultation{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Doctor menu">
+    <div class="sidebar-section">Doctor Portal</div>
+    <a href="/doctor/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/doctor/queue" class="sidebar-link active"><span class="icon">👥</span> Queue</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>Active Consultation</h1>
+        <p class="text-muted" id="consultation-sub">Appointment #{{ appointment_id }}</p>
+      </div>
+      <button class="btn btn-ghost" onclick="location.href='/doctor/queue'">← Back to Queue</button>
+    </div>
+
+    <div class="grid-2">
+      <!-- Consultation Form -->
+      <div class="card">
+        <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h2 class="card-title">Clinical Notes</h2>
+          <button id="video-btn" class="btn btn-secondary btn-sm" type="button" onclick="openVideoRoom()">Start video room</button>
+        </div>
+        <div id="video-panel" class="alert alert-success" style="display:none;margin-bottom:1rem">
+          <strong>Video consultation ready.</strong>
+          <a id="video-link" href="#" target="_blank" rel="noopener noreferrer">Open secure room</a>
+          <button class="btn btn-ghost btn-sm" type="button" onclick="endVideoRoom()">End</button>
+        </div>
+        <div class="form-group">
+          <label>Symptoms Reported</label>
+          <textarea id="symptoms" rows="2" placeholder="e.g., Fever for 3 days, dry cough"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Observations & Examination</label>
+          <textarea id="observations" rows="2" placeholder="e.g., BP 120/80, Chest clear"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Diagnosis Summary</label>
+          <input type="text" id="diagnosis" placeholder="e.g., Viral Upper Respiratory Tract Infection">
+        </div>
+        <div class="form-group">
+          <label>Doctor Advice / Instructions</label>
+          <textarea id="advice" rows="2" placeholder="e.g., Drink warm fluids, adequate rest"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Follow-up Date</label>
+          <input type="date" id="follow-up-date">
+        </div>
+      </div>
+
+      <!-- Prescription & Items -->
+      <div class="card">
+        <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:1rem">
+          <h2 class="card-title">Prescribed Medicines</h2>
+          <button class="btn btn-secondary btn-sm" onclick="addMedicineRow()">+ Add Medicine</button>
+        </div>
+        <div id="medicines-container"></div>
+
+        <div class="divider"></div>
+
+        <!-- Patient Lab Reports Review -->
+        <div class="flex" style="justify-content:space-between;align-items:center;margin-bottom:0.75rem">
+          <h2 class="card-title" style="font-size:0.95rem">Patient Lab Reports</h2>
+          <button class="btn btn-ghost btn-sm" onclick="loadPatientReports()">Refresh</button>
+        </div>
+        <div id="lab-reports-container" style="max-height: 180px; overflow-y: auto; margin-bottom: 1rem;">
+          <p class="text-muted" style="font-size:0.875rem">Loading patient reports...</p>
+        </div>
+
+        <div class="mt-4 flex gap-2">
+          <button class="btn btn-primary" onclick="saveAndFinalizeConsultation()">Complete Consultation & Finalize Rx</button>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const apptId = {{ appointment_id }};
+const user = getUser();
+if(!user || user.role !== 'doctor') { window.location.href = '/auth/login'; }
+
+let medicinesList = [];
+let videoSessionId = null;
+
+async function openVideoRoom(){
+  const button = document.getElementById('video-btn');
+  button.disabled = true;
+  const {ok, data} = await api('POST', `/api/appointments/${apptId}/video-session`, {provider: 'jitsi'});
+  button.disabled = false;
+  if(!ok){ toast(data?.message || data?.error?.message || 'Could not create video room', 'error'); return; }
+  const session = data.data.video_session;
+  videoSessionId = session.id;
+  document.getElementById('video-link').href = session.meeting_url;
+  document.getElementById('video-panel').style.display = 'block';
+  button.textContent = 'Video room active';
+}
+
+async function endVideoRoom(){
+  if(!videoSessionId) return;
+  const {ok} = await api('POST', `/api/video-sessions/${videoSessionId}/status`, {status: 'ended'});
+  if(ok){ document.getElementById('video-panel').style.display = 'none'; toast('Video room ended', 'info'); }
+}
+
+function addMedicineRow(){
+  const div = document.createElement('div');
+  div.className = 'medicine-row card mb-2';
+  div.style.padding = '0.75rem';
+  div.innerHTML = `
+    <div class="grid-3 mb-2">
+      <input type="text" placeholder="Medicine Name (e.g. Paracetamol)" class="med-name">
+      <input type="text" placeholder="Dosage (e.g. 500mg)" class="med-dosage">
+      <input type="text" placeholder="Frequency (e.g. 1+0+1)" class="med-freq">
+    </div>
+    <div class="grid-3">
+      <input type="text" placeholder="Duration (e.g. 5 days)" class="med-dur">
+      <input type="text" placeholder="Timing (e.g. After meal)" class="med-timing">
+      <button class="btn btn-ghost btn-sm text-danger" onclick="this.closest('.medicine-row').remove()">Remove</button>
+    </div>
+  `;
+  document.getElementById('medicines-container').appendChild(div);
+}
+
+async function saveAndFinalizeConsultation(){
+  const symptoms = document.getElementById('symptoms').value;
+  const observations = document.getElementById('observations').value;
+  const diagnosis = document.getElementById('diagnosis').value;
+  const advice = document.getElementById('advice').value;
+  const followUp = document.getElementById('follow-up-date').value;
+
+  const rows = document.querySelectorAll('.medicine-row');
+  const items = [];
+  rows.forEach(r => {
+    const name = r.querySelector('.med-name').value.trim();
+    if(name){
+      items.push({
+        medicine_name: name,
+        dosage: r.querySelector('.med-dosage').value.trim() || '1 tab',
+        frequency: r.querySelector('.med-freq').value.trim() || '1+0+1',
+        duration: r.querySelector('.med-dur').value.trim() || '5 days',
+        meal_instruction: r.querySelector('.med-timing').value.trim() || 'After meal'
+      });
+    }
+  });
+
+  // Step 1: Create consultation
+  const {ok: cOk, data: cData, error: cErr} = await api('POST', '/api/consultations', {
+    appointment_id: apptId,
+    symptoms: symptoms,
+    observations: observations,
+    notes: diagnosis,
+    advice: advice,
+    follow_up_date: followUp || null
+  });
+
+  if(!cOk){
+    toast(cErr || 'Failed to save consultation', 'error');
+    return;
+  }
+
+  const consultationId = cData.data.consultation.id;
+
+  // Step 2: Create prescription if items exist
+  const {ok: rxOk, data: rxData, error: rxErr} = await api('POST', '/api/prescriptions', {
+    consultation_id: consultationId,
+    diagnosis_summary: diagnosis,
+    advice: advice,
+    follow_up_date: followUp || null,
+    items: items
+  });
+
+  if(rxOk && rxData.data){
+    // Finalize prescription
+    await api('POST', `/api/prescriptions/${rxData.data.prescription.id}/finalize`);
+    toast('Consultation completed and prescription finalized!', 'success');
+    setTimeout(() => location.href = '/doctor/queue', 1500);
+  } else {
+    toast('Consultation saved without prescription', 'info');
+    setTimeout(() => location.href = '/doctor/queue', 1500);
+  }
+}
+
+async function loadPatientReports(){
+  const container = document.getElementById('lab-reports-container');
+  // Fetch appointment to find patient_id
+  const {ok: aOk, data: aData} = await api('GET', `/api/appointments`);
+  if(!aOk || !aData.data.appointments) return;
+  const appt = aData.data.appointments.find(a => a.id === apptId);
+  if(!appt) return;
+
+  const {ok, data} = await api('GET', `/api/lab-reports?patient_id=${appt.patient_id}`);
+  if(!ok || !data.data.lab_reports || data.data.lab_reports.length === 0){
+    container.innerHTML = '<p class="text-muted" style="font-size:0.875rem">No prior lab reports found for this patient.</p>';
+    return;
+  }
+
+  container.innerHTML = data.data.lab_reports.map(r => `
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--c-border);font-size:0.875rem">
+      <div>
+        <strong>${r.report_title}</strong> <span class="text-muted">(${new Date(r.uploaded_at).toLocaleDateString()})</span>
+      </div>
+      <a href="${r.download_url}" target="_blank" class="btn btn-ghost btn-sm">View</a>
+    </div>
+  `).join('');
+}
+
+loadPatientReports();
+
+// Add one default medicine row
+addMedicineRow();
+</script>
+{% endblock %}

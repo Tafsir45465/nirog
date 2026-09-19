@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}Analytics Dashboard{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Admin menu">
+    <div class="sidebar-section">Admin Portal</div>
+    <a href="/admin/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/admin/analytics" class="sidebar-link active"><span class="icon">📈</span> Analytics</a>
+    <a href="/admin/doctors" class="sidebar-link"><span class="icon">👨‍⚕️</span> Doctors</a>
+    <a href="/admin/hospitals" class="sidebar-link"><span class="icon">🏥</span> Hospitals</a>
+    <a href="/admin/tenants" class="sidebar-link"><span class="icon">🏢</span> Tenants</a>
+    <a href="/admin/appointments" class="sidebar-link"><span class="icon">📅</span> Appointments</a>
+    <a href="/admin/billing" class="sidebar-link"><span class="icon">💳</span> Billing</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+      <div>
+        <h1>Analytics Dashboard</h1>
+        <p class="text-muted">Hospital performance metrics and insights</p>
+      </div>
+      <div class="flex gap-1">
+        <select id="date-range" class="btn btn-ghost btn-sm" onchange="refreshAll()">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="180">Last 6 months</option>
+        </select>
+        <button class="btn btn-secondary btn-sm" onclick="exportDoctorPerformance()">📥 Export Doctor Performance</button>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="grid-4 mb-3">
+      <div class="stat-card">
+        <div class="val" id="stat-appointments">-</div>
+        <div class="lbl">Total Appointments</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-completion" style="color:var(--c-success)">-</div>
+        <div class="lbl">Completion Rate</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-revenue" style="color:var(--c-primary)">৳-</div>
+        <div class="lbl">Total Revenue</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="stat-patients" style="color:var(--c-accent)">-</div>
+        <div class="lbl">New Patients</div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Daily Appointment Volume</h2>
+        </div>
+        <div style="height:280px">
+          <canvas id="volumeChart"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Revenue Trend</h2>
+        </div>
+        <div style="height:280px">
+          <canvas id="revenueChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="grid-2 mb-3">
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Appointment Status Distribution</h2>
+        </div>
+        <div style="height:280px;display:flex;align-items:center;justify-content:center">
+          <canvas id="statusChart" style="max-width:280px"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Specialty Distribution</h2>
+        </div>
+        <div style="height:280px">
+          <canvas id="specialtyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Doctor Workload -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Top Doctors by Workload</h2>
+      </div>
+      <div style="height:300px">
+        <canvas id="doctorChart"></canvas>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || !['super_admin', 'admin', 'doctor'].includes(user.role)) {
+  toast('Admin access required', 'error');
+  setTimeout(() => location.href = '/auth/login', 1500);
+}
+
+let volumeChart, revenueChart, statusChart, specialtyChart, doctorChart;
+
+const chartColors = {
+  primary: '#0057b8',
+  success: '#047857',
+  warning: '#b45309',
+  danger: '#b91c1c',
+  accent: '#0891b2',
+  muted: '#64748b',
+  palette: ['#0057b8', '#0891b2', '#047857', '#b45309', '#7c3aed', '#db2777', '#059669', '#d97706']
+};
+
+function initCharts(){
+  // Volume Chart
+  const volCtx = document.getElementById('volumeChart').getContext('2d');
+  volumeChart = new Chart(volCtx, {
+    type: 'line',
+    data: { labels: [], datasets: [{ label: 'Appointments', data: [], borderColor: chartColors.primary, backgroundColor: 'rgba(0,87,184,0.1)', fill: true, tension: 0.3, pointRadius: 3 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } }, x: { grid: { display: false } } }
+    }
+  });
+
+  // Revenue Chart
+  const revCtx = document.getElementById('revenueChart').getContext('2d');
+  revenueChart = new Chart(revCtx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Revenue (৳)', data: [], backgroundColor: chartColors.accent, borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { y: { beginAtZero: true }, x: { grid: { display: false } } }
+    }
+  });
+
+  // Status Chart (Doughnut)
+  const statCtx = document.getElementById('statusChart').getContext('2d');
+  statusChart = new Chart(statCtx, {
+    type: 'doughnut',
+    data: { labels: [], datasets: [{ data: [], backgroundColor: [chartColors.success, chartColors.primary, chartColors.warning, chartColors.danger, chartColors.muted] }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } }
+    }
+  });
+
+  // Specialty Chart (Horizontal Bar)
+  const specCtx = document.getElementById('specialtyChart').getContext('2d');
+  specialtyChart = new Chart(specCtx, {
+    type: 'bar',
+    data: { labels: [], datasets: [{ label: 'Appointments', data: [], backgroundColor: chartColors.palette, borderRadius: 4 }] },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true }, y: { grid: { display: false } } }
+    }
+  });
+
+  // Doctor Chart
+  const docCtx = document.getElementById('doctorChart').getContext('2d');
+  doctorChart = new Chart(docCtx, {
+    type: 'bar',
+    data: { labels: [], datasets: [
+      { label: 'Total Appointments', data: [], backgroundColor: chartColors.primary, borderRadius: 4 },
+      { label: 'Completion Rate %', data: [], backgroundColor: chartColors.success, borderRadius: 4, type: 'line', borderColor: chartColors.success, yAxisID: 'y1' }
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      scales: {
+        y: { beginAtZero: true, title: { display: true, text: 'Appointments' } },
+        y1: { position: 'right', beginAtZero: true, max: 100, title: { display: true, text: 'Completion %' }, grid: { drawOnChartArea: false } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+async function loadSummary(){
+  const days = document.getElementById('date-range').value;
+  const {ok, data} = await api('GET', `/api/analytics/dashboard?days=${days}`);
+  if(ok && data.data){
+    const s = data.data.summary;
+    document.getElementById('stat-appointments').textContent = s.total_appointments;
+    document.getElementById('stat-completion').textContent = s.completion_rate + '%';
+    document.getElementById('stat-revenue').textContent = '৳' + Number(s.total_revenue).toLocaleString();
+    document.getElementById('stat-patients').textContent = s.new_patients;
+
+    // Update status chart
+    const breakdown = data.data.status_breakdown;
+    statusChart.data.labels = Object.keys(breakdown).map(k => k.replace('_', ' ').toUpperCase());
+    statusChart.data.datasets[0].data = Object.values(breakdown);
+    statusChart.update();
+  }
+}
+
+async function loadVolumeChart(){
+  const days = document.getElementById('date-range').value;
+  const {ok, data} = await api('GET', `/api/analytics/daily-volume?days=${days}`);
+  if(ok && data.data){
+    volumeChart.data.labels = data.data.labels.map(d => {
+      const date = new Date(d);
+      return date.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    });
+    volumeChart.data.datasets[0].data = data.data.data;
+    volumeChart.update();
+  }
+}
+
+async function loadRevenueChart(){
+  const days = document.getElementById('date-range').value;
+  const {ok, data} = await api('GET', `/api/analytics/revenue-trend?days=${days}`);
+  if(ok && data.data){
+    revenueChart.data.labels = data.data.labels.map(d => {
+      const date = new Date(d);
+      return date.toLocaleDateString('en-US', {month:'short', day:'numeric'});
+    });
+    revenueChart.data.datasets[0].data = data.data.data;
+    revenueChart.update();
+  }
+}
+
+async function loadSpecialtyChart(){
+  const days = document.getElementById('date-range').value;
+  const {ok, data} = await api('GET', `/api/analytics/specialty-distribution?days=${days}`);
+  if(ok && data.data){
+    specialtyChart.data.labels = data.data.labels;
+    specialtyChart.data.datasets[0].data = data.data.data;
+    specialtyChart.update();
+  }
+}
+
+async function loadDoctorChart(){
+  const days = document.getElementById('date-range').value;
+  const {ok, data} = await api('GET', `/api/analytics/doctor-workload?days=${days}`);
+  if(ok && data.data){
+    doctorChart.data.labels = data.data.labels;
+    doctorChart.data.datasets[0].data = data.data.appointments;
+    doctorChart.data.datasets[1].data = data.data.completion_rate;
+    doctorChart.update();
+  }
+}
+
+function refreshAll(){
+  loadSummary();
+  loadVolumeChart();
+  loadRevenueChart();
+  loadSpecialtyChart();
+  loadDoctorChart();
+}
+
+// Initialize
+initCharts();
+refreshAll();
+
+function exportDoctorPerformance(){
+  const url = '/api/exports/doctors/performance/csv';
+  downloadAuthenticated(url, 'doctor_performance.csv');
+}
+</script>
+{% endblock %}

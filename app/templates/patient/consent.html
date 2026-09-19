@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% block title %}My Consents{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/patient/appointments" class="sidebar-link">
+      <span class="icon">📅</span> My Appointments
+    </a>
+    <a href="/patient/prescriptions" class="sidebar-link">
+      <span class="icon">💊</span> Prescriptions
+    </a>
+    <a href="/patient/lab-reports" class="sidebar-link">
+      <span class="icon">🧪</span> Lab Reports
+    </a>
+    <a href="/patient/consent" class="sidebar-link active">
+      <span class="icon">📝</span> My Consents
+    </a>
+    <a href="/patient/find-doctor" class="sidebar-link">
+      <span class="icon">🔍</span> Find Doctor
+    </a>
+    <a href="/patient/profile" class="sidebar-link">
+      <span class="icon">👤</span> My Profile
+    </a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>My Consents</h1>
+      <p>Manage your consent preferences and view consent history</p>
+    </div>
+
+    <div class="grid-4">
+      <div class="stat-card">
+        <div class="val" id="total-consents">-</div>
+        <div class="lbl">Total Consents</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="granted-count">-</div>
+        <div class="lbl">Granted</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="pending-count">-</div>
+        <div class="lbl">Pending</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="denied-count">-</div>
+        <div class="lbl">Denied/Revoked</div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Consent Records</h2>
+      </div>
+      <div id="consents-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Consent Detail Modal -->
+<div id="consent-modal" class="modal" style="display:none;">
+  <div class="modal-content" style="max-width:700px;">
+    <div class="modal-header">
+      <h3 id="modal-title">Consent Details</h3>
+      <button class="btn-close" onclick="closeModal()">&times;</button>
+    </div>
+    <div id="modal-body" class="modal-body">
+      <!-- Dynamic content -->
+    </div>
+    <div id="modal-actions" class="modal-footer" style="display:none;">
+      <!-- Dynamic action buttons -->
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+
+let allConsents = [];
+
+async function loadConsents() {
+  const res = await api('GET', '/api/consents/my');
+  if(!res.ok || !res.data) {
+    document.getElementById('consents-list').innerHTML = '<p class="text-muted text-center">Failed to load consents</p>';
+    return;
+  }
+
+  allConsents = res.data.data || [];
+  updateStats();
+  renderConsents();
+}
+
+function updateStats() {
+  document.getElementById('total-consents').textContent = allConsents.length;
+  document.getElementById('granted-count').textContent = allConsents.filter(c => c.status === 'granted').length;
+  document.getElementById('pending-count').textContent = allConsents.filter(c => c.status === 'pending').length;
+  document.getElementById('denied-count').textContent = allConsents.filter(c => ['denied','revoked'].includes(c.status)).length;
+}
+
+function renderConsents() {
+  const container = document.getElementById('consents-list');
+  if(allConsents.length === 0) {
+    container.innerHTML = '<p class="text-muted text-center" style="padding:2rem;">No consent records found. You will see consent requests here when created by your healthcare provider.</p>';
+    return;
+  }
+
+  container.innerHTML = allConsents.map(c => `
+    <div class="consent-item" style="padding:1rem;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <strong>${escapeHtml(c.title)}</strong>
+        <div class="text-muted" style="font-size:0.875rem;margin-top:0.25rem;">
+          ${formatConsentType(c.consent_type)} &middot; Version ${c.version}
+          ${c.granted_at ? ' &middot; Granted: ' + new Date(c.granted_at).toLocaleDateString() : ''}
+          ${c.expires_at ? ' &middot; Expires: ' + new Date(c.expires_at).toLocaleDateString() : ''}
+        </div>
+      </div>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <span class="badge badge-${getStatusClass(c.status)}">${c.status}</span>
+        <button class="btn btn-secondary btn-sm" onclick="viewConsent(${c.id})">View</button>
+        ${c.status === 'pending' ? `
+          <button class="btn btn-primary btn-sm" onclick="grantConsent(${c.id})">Grant</button>
+          <button class="btn btn-danger btn-sm" onclick="denyConsent(${c.id})">Deny</button>
+        ` : ''}
+        ${c.status === 'granted' ? `
+          <button class="btn btn-warning btn-sm" onclick="revokeConsent(${c.id})">Revoke</button>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+function getStatusClass(status) {
+  const map = { granted: 'success', pending: 'warning', denied: 'danger', revoked: 'danger', expired: 'secondary' };
+  return map[status] || 'secondary';
+}
+
+function formatConsentType(type) {
+  return type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+function viewConsent(id) {
+  const consent = allConsents.find(c => c.id === id);
+  if(!consent) return;
+
+  document.getElementById('modal-title').textContent = consent.title;
+  document.getElementById('modal-body').innerHTML = `
+    <div style="margin-bottom:1rem;">
+      <strong>Status:</strong> <span class="badge badge-${getStatusClass(consent.status)}">${consent.status}</span>
+    </div>
+    <div style="margin-bottom:1rem;">
+      <strong>Type:</strong> ${formatConsentType(consent.consent_type)}
+    </div>
+    <div style="margin-bottom:1rem;">
+      <strong>Version:</strong> ${consent.version}
+    </div>
+    ${consent.granted_at ? `<div style="margin-bottom:1rem;"><strong>Granted:</strong> ${new Date(consent.granted_at).toLocaleString()}</div>` : ''}
+    ${consent.denied_at ? `<div style="margin-bottom:1rem;"><strong>Denied:</strong> ${new Date(consent.denied_at).toLocaleString()}</div>` : ''}
+    ${consent.revoked_at ? `<div style="margin-bottom:1rem;"><strong>Revoked:</strong> ${new Date(consent.revoked_at).toLocaleString()}</div>` : ''}
+    ${consent.expires_at ? `<div style="margin-bottom:1rem;"><strong>Expires:</strong> ${new Date(consent.expires_at).toLocaleString()}</div>` : ''}
+    ${consent.notes ? `<div style="margin-bottom:1rem;"><strong>Notes:</strong> ${escapeHtml(consent.notes)}</div>` : ''}
+    <div style="margin-bottom:1rem;">
+      <strong>Description:</strong>
+      <div style="background:var(--bg-secondary);padding:1rem;border-radius:6px;margin-top:0.5rem;white-space:pre-wrap;">${escapeHtml(consent.description)}</div>
+    </div>
+  `;
+
+  const actionsDiv = document.getElementById('modal-actions');
+  actionsDiv.style.display = 'flex';
+
+  if(consent.status === 'pending') {
+    actionsDiv.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" onclick="grantConsent(${consent.id})">Grant Consent</button>
+      <button class="btn btn-danger" onclick="denyConsent(${consent.id})">Deny Consent</button>
+    `;
+  } else if(consent.status === 'granted') {
+    actionsDiv.innerHTML = `
+      <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      <button class="btn btn-warning" onclick="revokeConsent(${consent.id})">Revoke Consent</button>
+    `;
+  } else {
+    actionsDiv.innerHTML = '<button class="btn btn-secondary" onclick="closeModal()">Close</button>';
+  }
+
+  document.getElementById('consent-modal').style.display = 'flex';
+}
+
+function closeModal() {
+  document.getElementById('consent-modal').style.display = 'none';
+}
+
+async function grantConsent(id) {
+  if(!confirm('Are you sure you want to grant this consent?')) return;
+
+  const res = await api('POST', `/api/consents/my/grant/${id}`);
+  if(res.ok) {
+    alert('Consent granted successfully');
+    closeModal();
+    loadConsents();
+  } else {
+    alert('Error: ' + (res.data?.error || 'Failed to grant consent'));
+  }
+}
+
+async function denyConsent(id) {
+  if(!confirm('Are you sure you want to deny this consent?')) return;
+
+  const res = await api('POST', `/api/consents/my/deny/${id}`);
+  if(res.ok) {
+    alert('Consent denied');
+    closeModal();
+    loadConsents();
+  } else {
+    alert('Error: ' + (res.data?.error || 'Failed to deny consent'));
+  }
+}
+
+async function revokeConsent(id) {
+  if(!confirm('Are you sure you want to revoke this consent? This action cannot be undone.')) return;
+
+  const reason = prompt('Please provide a reason for revoking this consent (optional):');
+  const res = await api('POST', `/api/consents/my/revoke/${id}`, { reason: reason || '' });
+  if(res.ok) {
+    alert('Consent revoked successfully');
+    closeModal();
+    loadConsents();
+  } else {
+    alert('Error: ' + (res.data?.error || 'Failed to revoke consent'));
+  }
+}
+
+function escapeHtml(text) {
+  if(!text) return '';
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Close modal on outside click
+document.getElementById('consent-modal').addEventListener('click', function(e) {
+  if(e.target === this) closeModal();
+});
+
+// Load consents on page load
+loadConsents();
+</script>
+
+<style>
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.modal-content {
+  background: var(--bg-primary);
+  border-radius: 8px;
+  max-height: 90vh;
+  overflow-y: auto;
+  width: 90%;
+}
+.modal-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.modal-body {
+  padding: 1rem;
+}
+.modal-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.badge-success { background: #10b981; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.badge-warning { background: #f59e0b; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.badge-danger { background: #ef4444; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+.badge-secondary { background: #6b7280; color: white; padding: 0.25rem 0.5rem; border-radius: 4px; font-size: 0.75rem; }
+</style>
+{% endblock %}

@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Receptionist Dashboard{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Receptionist menu">
+    <div class="sidebar-section">Reception</div>
+    <a href="/receptionist/dashboard" class="sidebar-link active">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/receptionist/check-in" class="sidebar-link">
+      <span class="icon">✅</span> Check-in
+    </a>
+    <a href="/receptionist/queue" class="sidebar-link">
+      <span class="icon">📋</span> Queue
+    </a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Reception Dashboard</h1>
+      <p class="text-muted">Manage patient check-ins and queue</p>
+    </div>
+
+    <div class="grid-4">
+      <div class="stat-card">
+        <div class="val" id="appts-count">-</div>
+        <div class="lbl">Today's Appointments</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="checkedin-count">-</div>
+        <div class="lbl">Checked In</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="waiting-count">-</div>
+        <div class="lbl">Waiting</div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Quick Actions</h2>
+      </div>
+      <div class="flex gap-2" style="flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="location.href='/receptionist/check-in'">Check In Patient</button>
+        <button class="btn btn-secondary" onclick="location.href='/receptionist/queue'">View Queue</button>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Today's Appointments</h2>
+      </div>
+      <div id="appointments-list">
+        <div class="empty"><div class="empty-icon">📅</div><p>Loading…</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'receptionist') { window.location.href = '/auth/login'; }
+
+async function loadDashboard(){
+  const {ok, data} = await api('GET', '/api/appointments');
+  if(!ok) return;
+
+  const all = data.data.appointments || [];
+  const today = new Date().toDateString();
+  const todayAppts = all.filter(a => new Date(a.scheduled_start).toDateString() === today);
+  const checked = todayAppts.filter(a => a.status === 'checked_in');
+  const waiting = todayAppts.filter(a => a.status === 'waiting');
+
+  document.getElementById('appts-count').textContent = todayAppts.length;
+  document.getElementById('checkedin-count').textContent = checked.length;
+  document.getElementById('waiting-count').textContent = waiting.length;
+
+  const list = document.getElementById('appointments-list');
+  if(todayAppts.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><p>No appointments today</p></div>';
+  } else {
+    list.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Status</th></tr></thead><tbody>' +
+      todayAppts.map(a => `<tr>
+        <td>${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${a.patient_name}</td>
+        <td>${a.doctor_name}</td>
+        <td><span class="badge badge-${a.status==='checked_in'?'success':a.status==='waiting'?'info':'neutral'}">${a.status}</span></td>
+      </tr>`).join('') +
+      '</tbody></table></div>';
+  }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+{% endblock %}

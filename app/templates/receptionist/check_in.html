@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+{% block title %}Patient Check-In{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Receptionist menu">
+    <div class="sidebar-section">Reception</div>
+    <a href="/receptionist/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/receptionist/check-in" class="sidebar-link active"><span class="icon">✅</span> Check-in</a>
+    <a href="/receptionist/queue" class="sidebar-link"><span class="icon">📋</span> Queue</a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Patient Check-In</h1>
+      <p class="text-muted">Find and check in patients for their appointments</p>
+    </div>
+
+    <div class="card mb-3">
+      <h2 class="card-title mb-3">Search Patient by Email or Phone</h2>
+      <div class="flex gap-2">
+        <input type="text" id="search-query" placeholder="patient@example.com or +880..." style="flex:1">
+        <button class="btn btn-primary" onclick="searchPatients()">Search</button>
+      </div>
+    </div>
+
+    <div id="search-results"></div>
+
+    <div id="check-in-form" style="display:none" class="card mt-3">
+      <h2 class="card-title mb-3">Check In Patient</h2>
+      <div id="patient-info" class="mb-3"></div>
+      <div class="form-group">
+        <label>Select Appointment</label>
+        <select id="appointment-select"></select>
+      </div>
+      <div class="flex gap-2">
+        <button class="btn btn-primary" onclick="confirmCheckIn()">Confirm Check-In</button>
+        <button class="btn btn-ghost" onclick="document.getElementById('check-in-form').style.display='none'">Cancel</button>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'receptionist') { window.location.href = '/auth/login'; }
+
+async function searchPatients(){
+  const query = document.getElementById('search-query').value.trim();
+  if(!query){
+    toast('Enter email or phone to search', 'warn');
+    return;
+  }
+
+  const results = document.getElementById('search-results');
+  results.innerHTML = '<div class="card"><p>Searching...</p></div>';
+
+  const {ok, data} = await api('GET', `/api/admin/patients?search=${encodeURIComponent(query)}`);
+  if(!ok || !data.data.patients || data.data.patients.length === 0){
+    results.innerHTML = '<div class="card"><div class="empty"><p>No patients found matching that search.</p></div></div>';
+    return;
+  }
+
+  results.innerHTML = `<div class="card">
+    <table>
+      <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Action</th></tr></thead>
+      <tbody>
+        ${data.data.patients.map(p => `
+          <tr>
+            <td><strong>${p.name}</strong></td>
+            <td>${p.email || '-'}</td>
+            <td>${p.phone || '-'}</td>
+            <td><button class="btn btn-primary btn-sm" onclick="selectPatient(${p.id}, '${p.name.replace(/'/g, "\\'")}')">Select</button></td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+async function selectPatient(patientId, patientName){
+  document.getElementById('patient-info').innerHTML = `<p><strong>Patient:</strong> ${patientName} (ID: ${patientId})</p>`;
+
+  const {ok, data} = await api('GET', `/api/appointments?patient_id=${patientId}`);
+  const select = document.getElementById('appointment-select');
+
+  if(!ok || !data.data.appointments || data.data.appointments.length === 0){
+    select.innerHTML = '<option value="">No upcoming appointments found</option>';
+  } else {
+    const today = new Date().toDateString();
+    const upcoming = data.data.appointments.filter(a =>
+      (a.status === 'booked' || a.status === 'confirmed') &&
+      new Date(a.scheduled_start) >= new Date()
+    );
+
+    if(upcoming.length === 0){
+      select.innerHTML = '<option value="">No upcoming appointments to check in</option>';
+    } else {
+      select.innerHTML = upcoming.map(a =>
+        `<option value="${a.id}">${new Date(a.scheduled_start).toLocaleDateString()} ${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})} - ${a.doctor_name} @ ${a.hospital_name}</option>`
+      ).join('');
+    }
+  }
+
+  document.getElementById('check-in-form').style.display = 'block';
+}
+
+async function confirmCheckIn(){
+  const appointmentId = document.getElementById('appointment-select').value;
+  if(!appointmentId){
+    toast('Please select an appointment', 'warn');
+    return;
+  }
+
+  const {ok, error} = await api('POST', `/api/appointments/${appointmentId}/checkin`, {});
+  if(ok){
+    toast('Patient checked in successfully! Token generated.', 'success');
+    document.getElementById('check-in-form').style.display = 'none';
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('search-query').value = '';
+  } else {
+    toast(error || 'Check-in failed', 'error');
+  }
+}
+</script>
+{% endblock %}

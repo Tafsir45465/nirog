@@ -1,0 +1,223 @@
+{% extends "base.html" %}
+{% block title %}Manage Doctors{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Admin menu">
+    <div class="sidebar-section">Admin</div>
+    <a href="/admin/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/admin/doctors" class="sidebar-link active"><span class="icon">👨‍⚕️</span> Doctors</a>
+    <a href="/admin/hospitals" class="sidebar-link"><span class="icon">🏥</span> Hospitals</a>
+    <a href="/admin/appointments" class="sidebar-link"><span class="icon">📅</span> Appointments</a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>Manage Doctors</h1>
+        <p class="text-muted">Onboard, approve, and manage doctor accounts</p>
+      </div>
+      <button class="btn btn-primary" onclick="showAddDoctorModal()">+ Add Doctor</button>
+    </div>
+
+    <div class="card">
+      <div id="doctors-list">
+        <div class="empty"><div class="empty-icon">👨‍⚕️</div><p>Loading doctors...</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Add Doctor Modal -->
+<div id="add-doctor-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999;display:flex;align-items:center;justify-content:center;">
+  <div class="card" style="width:100%;max-width:600px;margin:1rem;max-height:90vh;overflow-y:auto">
+    <h2 style="margin-bottom:1rem">Add New Doctor</h2>
+    <div class="grid-2">
+      <div class="form-group">
+        <label>Full Name *</label>
+        <input type="text" id="doctor-name" placeholder="Dr. Full Name">
+      </div>
+      <div class="form-group">
+        <label>Email *</label>
+        <input type="email" id="doctor-email" placeholder="doctor@hospital.com">
+      </div>
+      <div class="form-group">
+        <label>Password *</label>
+        <input type="password" id="doctor-password" placeholder="Minimum 8 characters">
+      </div>
+      <div class="form-group">
+        <label>Phone</label>
+        <input type="tel" id="doctor-phone" placeholder="+880...">
+      </div>
+      <div class="form-group">
+        <label>License Number *</label>
+        <input type="text" id="doctor-license" placeholder="BMC-XXXXX">
+      </div>
+      <div class="form-group">
+        <label>Specialty *</label>
+        <select id="doctor-specialty"></select>
+      </div>
+      <div class="form-group">
+        <label>Experience (years)</label>
+        <input type="number" id="doctor-experience" value="0" min="0">
+      </div>
+      <div class="form-group">
+        <label>Consultation Fee (৳)</label>
+        <input type="number" id="doctor-fee" value="500" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Hospitals *</label>
+      <div id="hospital-checkboxes"></div>
+    </div>
+    <div class="form-group">
+      <label>Qualifications</label>
+      <input type="text" id="doctor-qualifications" placeholder="MBBS, FCPS, MD...">
+    </div>
+    <div class="form-group">
+      <label>Bio</label>
+      <textarea id="doctor-bio" rows="2" placeholder="Brief professional bio..."></textarea>
+    </div>
+    <div class="flex gap-2 mt-3">
+      <button class="btn btn-primary" onclick="submitAddDoctor()">Add Doctor</button>
+      <button class="btn btn-ghost" onclick="closeModal('add-doctor-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || !['admin','super_admin'].includes(user.role)) { window.location.href = '/auth/login'; }
+
+let allSpecialties = [];
+let allHospitals = [];
+
+async function loadCatalogs(){
+  const [sRes, hRes] = await Promise.all([
+    api('GET', '/api/catalogs/specialties'),
+    api('GET', '/api/hospitals')
+  ]);
+  if(sRes.ok && sRes.data.data){
+    allSpecialties = sRes.data.data.specialties || [];
+    const sSelect = document.getElementById('doctor-specialty');
+    sSelect.innerHTML = '<option value="">Select specialty</option>' +
+      allSpecialties.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  }
+  if(hRes.ok && hRes.data.data){
+    allHospitals = hRes.data.data.hospitals || [];
+    document.getElementById('hospital-checkboxes').innerHTML =
+      allHospitals.map(h => `<label style="display:block;margin:0.25rem 0"><input type="checkbox" name="hospital" value="${h.id}"> ${h.name}</label>`).join('');
+  }
+}
+
+async function loadDoctors(){
+  const list = document.getElementById('doctors-list');
+  list.innerHTML = '<div class="empty"><p>Loading...</p></div>';
+
+  const {ok, data} = await api('GET', '/api/admin/doctors');
+  if(!ok || !data.data.doctors || data.data.doctors.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">👨‍⚕️</div><p>No doctors found. Add the first doctor.</p></div>';
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Specialty</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.data.doctors.map(d => `
+            <tr>
+              <td><strong>${d.title || 'Dr.'} ${d.name}</strong></td>
+              <td>${d.email || '-'}</td>
+              <td>${d.specialty || '-'}</td>
+              <td><span class="badge badge-${d.verification_status==='active'?'success':d.verification_status==='pending'?'warn':'neutral'}">${d.verification_status}</span></td>
+              <td>
+                ${d.verification_status === 'pending' ? `<button class="btn btn-primary btn-sm" onclick="approveDoctor(${d.id})">Approve</button>` : ''}
+                <button class="btn btn-ghost btn-sm" onclick="viewDoctor(${d.id})">View</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function showAddDoctorModal(){
+  document.getElementById('add-doctor-modal').style.display = 'flex';
+}
+
+function closeModal(id){
+  document.getElementById(id).style.display = 'none';
+}
+
+async function submitAddDoctor(){
+  const name = document.getElementById('doctor-name').value.trim();
+  const email = document.getElementById('doctor-email').value.trim();
+  const password = document.getElementById('doctor-password').value;
+  const phone = document.getElementById('doctor-phone').value.trim();
+  const license = document.getElementById('doctor-license').value.trim();
+  const specialtyId = document.getElementById('doctor-specialty').value;
+  const experience = parseInt(document.getElementById('doctor-experience').value) || 0;
+  const fee = parseFloat(document.getElementById('doctor-fee').value) || 500;
+  const qualifications = document.getElementById('doctor-qualifications').value.trim();
+  const bio = document.getElementById('doctor-bio').value.trim();
+
+  const hospitalIds = Array.from(document.querySelectorAll('input[name="hospital"]:checked')).map(c => parseInt(c.value));
+
+  if(!name || !email || !password || !license || !specialtyId || hospitalIds.length === 0){
+    toast('Please fill all required fields', 'warn');
+    return;
+  }
+
+  const {ok, error} = await api('POST', '/api/doctors', {
+    full_name: name,
+    email: email,
+    password: password,
+    phone: phone || null,
+    license_number: license,
+    specialty_id: parseInt(specialtyId),
+    experience_years: experience,
+    consultation_fee: fee,
+    qualifications: qualifications,
+    bio: bio,
+    hospital_ids: hospitalIds
+  });
+
+  if(ok){
+    toast('Doctor added successfully', 'success');
+    closeModal('add-doctor-modal');
+    loadDoctors();
+  } else {
+    toast(error || 'Failed to add doctor', 'error');
+  }
+}
+
+async function approveDoctor(doctorId){
+  const {ok, error} = await api('POST', `/api/doctors/${doctorId}/approve`, {});
+  if(ok){
+    toast('Doctor approved', 'success');
+    loadDoctors();
+  } else {
+    toast(error || 'Failed to approve', 'error');
+  }
+}
+
+function viewDoctor(id){
+  toast('Doctor detail view coming soon', 'info');
+}
+
+document.getElementById('add-doctor-modal').style.display = 'none';
+loadCatalogs();
+loadDoctors();
+</script>
+{% endblock %}

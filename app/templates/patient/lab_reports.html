@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}My Lab Reports{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/patient/appointments" class="sidebar-link">
+      <span class="icon">📅</span> My Appointments
+    </a>
+    <a href="/patient/prescriptions" class="sidebar-link">
+      <span class="icon">💊</span> Prescriptions
+    </a>
+    <a href="/patient/lab-reports" class="sidebar-link active">
+      <span class="icon">🧪</span> Lab Reports
+    </a>
+    <a href="/patient/find-doctor" class="sidebar-link">
+      <span class="icon">🔍</span> Find Doctor
+    </a>
+    <a href="/patient/profile" class="sidebar-link">
+      <span class="icon">👤</span> My Profile
+    </a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header" style="display: flex; justify-content: space-between; align-items: center;">
+      <div>
+        <h1>My Lab Reports</h1>
+        <p class="text-muted">Upload and view your diagnostic and pathology test reports</p>
+      </div>
+      <button class="btn btn-primary" onclick="openUploadModal()">+ Upload Report</button>
+    </div>
+
+    <!-- Upload Modal -->
+    <div id="upload-modal" class="card" style="display: none; margin-bottom: 2rem; border-left: 4px solid var(--c-primary);">
+      <div class="card-header">
+        <h2 class="card-title">Upload New Lab Report</h2>
+        <button class="btn btn-ghost btn-sm" onclick="closeUploadModal()">✕ Close</button>
+      </div>
+      <form id="upload-form" onsubmit="handleReportUpload(event)">
+        <div class="grid-2">
+          <div class="form-group">
+            <label for="report-title">Report Title *</label>
+            <input type="text" id="report-title" required placeholder="e.g. Complete Blood Count (CBC)">
+          </div>
+          <div class="form-group">
+            <label for="test-name">Test Name *</label>
+            <input type="text" id="test-name" required placeholder="e.g. CBC / Lipid Profile">
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="report-file">Select File (PDF, PNG, JPG - max 10MB) *</label>
+          <input type="file" id="report-file" accept=".pdf,.png,.jpg,.jpeg" required>
+        </div>
+        <div class="form-group">
+          <label for="report-notes">Doctor or Patient Notes (Optional)</label>
+          <textarea id="report-notes" rows="2" placeholder="e.g. Fasting blood sugar results before surgery"></textarea>
+        </div>
+        <div class="flex gap-2">
+          <button type="submit" id="submit-btn" class="btn btn-primary">Upload Report</button>
+          <button type="button" class="btn btn-ghost" onclick="closeUploadModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <div id="reports-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+
+function openUploadModal(){
+  document.getElementById('upload-modal').style.display = 'block';
+  document.getElementById('report-title').focus();
+}
+
+function closeUploadModal(){
+  document.getElementById('upload-modal').style.display = 'none';
+  document.getElementById('upload-form').reset();
+}
+
+async function loadReports(){
+  const {ok, data} = await api('GET', '/api/lab-reports');
+  const list = document.getElementById('reports-list');
+
+  if(!ok || !data.data.lab_reports || data.data.lab_reports.length === 0){
+    list.innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">🧪</div>
+        <p>No lab reports uploaded yet.</p>
+        <button class="btn btn-secondary mt-2" onclick="openUploadModal()">Upload your first report</button>
+      </div>
+    `;
+    return;
+  }
+
+  const reports = data.data.lab_reports;
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date Uploaded</th>
+            <th>Report Title</th>
+            <th>Test Name</th>
+            <th>File</th>
+            <th>Size</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${reports.map(r => `
+            <tr>
+              <td>${new Date(r.uploaded_at).toLocaleDateString()}</td>
+              <td><strong>${r.report_title}</strong></td>
+              <td>${r.test_name}</td>
+              <td><span class="badge badge-info">${r.mime_type.includes('pdf') ? 'PDF' : 'IMAGE'}</span> ${r.file_name}</td>
+              <td>${(r.file_size_bytes / 1024).toFixed(1)} KB</td>
+              <td>
+                <a href="${r.download_url}" target="_blank" class="btn btn-secondary btn-sm">Download</a>
+                <button class="btn btn-ghost btn-sm text-danger" onclick="deleteReport(${r.id})">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function handleReportUpload(e){
+  e.preventDefault();
+  const fileInput = document.getElementById('report-file');
+  if(!fileInput.files[0]){
+    toast('Please select a file to upload', 'error');
+    return;
+  }
+
+  const title = document.getElementById('report-title').value.trim();
+  const testName = document.getElementById('test-name').value.trim();
+  const notes = document.getElementById('report-notes').value.trim();
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  formData.append('report_title', title);
+  formData.append('test_name', testName);
+  if(notes) formData.append('notes', notes);
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading...';
+
+  const token = sessionStorage.getItem('nirog_token');
+  try {
+    const resp = await fetch('/api/lab-reports', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token
+      },
+      body: formData
+    });
+
+    const res = await resp.json();
+    if(resp.ok){
+      toast('Lab report uploaded successfully!', 'success');
+      closeUploadModal();
+      loadReports();
+    } else {
+      toast(res?.message || res?.error?.message || 'Upload failed', 'error');
+    }
+  } catch(err){
+    toast('Network error during upload', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Upload Report';
+  }
+}
+
+async function deleteReport(id){
+  if(!confirm('Are you sure you want to delete this lab report?')) return;
+  const {ok, error} = await api('DELETE', `/api/lab-reports/${id}`);
+  if(ok){
+    toast('Report deleted', 'info');
+    loadReports();
+  } else {
+    toast(error || 'Failed to delete report', 'error');
+  }
+}
+
+loadReports();
+</script>
+{% endblock %}

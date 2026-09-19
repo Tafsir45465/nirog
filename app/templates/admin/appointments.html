@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}All Appointments{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Admin menu">
+    <div class="sidebar-section">Admin</div>
+    <a href="/admin/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/admin/doctors" class="sidebar-link"><span class="icon">👨‍⚕️</span> Doctors</a>
+    <a href="/admin/hospitals" class="sidebar-link"><span class="icon">🏥</span> Hospitals</a>
+    <a href="/admin/appointments" class="sidebar-link active"><span class="icon">📅</span> Appointments</a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:1rem">
+      <div>
+        <h1>All Appointments</h1>
+        <p class="text-muted">Platform-wide appointment overview</p>
+      </div>
+      <button class="btn btn-secondary btn-sm" onclick="exportAppointments()">📥 Export CSV</button>
+    </div>
+
+    <div class="card">
+      <div id="appointments-list">
+        <div class="empty"><div class="empty-icon">📅</div><p>Loading appointments...</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || !['admin','super_admin'].includes(user.role)) { window.location.href = '/auth/login'; }
+
+async function loadAppointments(){
+  const list = document.getElementById('appointments-list');
+  const {ok, data} = await api('GET', '/api/appointments');
+  if(!ok || !data.data.appointments || data.data.appointments.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><p>No appointments found.</p></div>';
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Date & Time</th>
+            <th>Patient</th>
+            <th>Doctor</th>
+            <th>Hospital</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.data.appointments.map(a => `
+            <tr>
+              <td>#${a.id}</td>
+              <td>${new Date(a.scheduled_start).toLocaleDateString()} ${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+              <td>${a.patient_name}</td>
+              <td>${a.doctor_name}</td>
+              <td>${a.hospital_name}</td>
+              <td><span class="badge badge-${a.status==='completed'?'success':a.status==='cancelled'?'danger':a.status==='checked_in'?'info':'neutral'}">${a.status}</span></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function exportAppointments(){
+  const url = '/api/exports/appointments/csv';
+  downloadAuthenticated(url, 'appointments.csv');
+}
+
+loadAppointments();
+</script>
+{% endblock %}

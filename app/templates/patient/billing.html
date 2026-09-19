@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}My Invoices & Bills{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/patient/appointments" class="sidebar-link"><span class="icon">📅</span> Appointments</a>
+    <a href="/patient/prescriptions" class="sidebar-link"><span class="icon">💊</span> Prescriptions</a>
+    <a href="/patient/lab-reports" class="sidebar-link"><span class="icon">🧪</span> Lab Reports</a>
+    <a href="/patient/billing" class="sidebar-link active"><span class="icon">💳</span> Invoices & Bills</a>
+    <a href="/patient/find-doctor" class="sidebar-link"><span class="icon">🔍</span> Find Doctor</a>
+    <a href="/patient/profile" class="sidebar-link"><span class="icon">👤</span> My Profile</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header">
+      <h1>My Invoices & Bills</h1>
+      <p class="text-muted">View medical bills, payment receipts, and settlement history</p>
+    </div>
+
+    <!-- Patient Bill Summary -->
+    <div class="grid-3 mb-3">
+      <div class="stat-card">
+        <div class="val" id="patient-billed" style="color:var(--c-primary)">৳0.00</div>
+        <div class="lbl">Total Invoiced</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="patient-paid" style="color:var(--c-success,#10b981)">৳0.00</div>
+        <div class="lbl">Total Paid</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="patient-due" style="color:var(--c-danger,#ef4444)">৳0.00</div>
+        <div class="lbl">Outstanding Due</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Billing History</h2>
+      </div>
+      <div id="invoices-list">
+        <div class="text-center" style="padding:2rem">
+          <div class="spinner" style="width:32px;height:32px;border-width:3px"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<!-- Invoice View Modal -->
+<div id="view-invoice-modal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.5);z-index:999;align-items:center;justify-content:center;">
+  <div class="card" style="width:100%;max-width:680px;margin:1rem;max-height:90vh;overflow-y:auto">
+    <div id="invoice-printable">
+      <!-- Invoice receipt content -->
+    </div>
+    <div class="flex gap-2 mt-3" style="border-top:1px solid var(--c-border);padding-top:1rem">
+      <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ Print Receipt</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeViewInvoiceModal()">Close</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') {
+  toast('Please log in as a patient', 'warn');
+  setTimeout(() => location.href = '/auth/login', 1500);
+}
+
+async function loadPatientInvoices(){
+  const {ok, data} = await api('GET', '/api/billing/invoices');
+  const list = document.getElementById('invoices-list');
+
+  if(!ok || !data.data.invoices || data.data.invoices.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">💳</div><p>No billing records found.</p></div>';
+    return;
+  }
+
+  const invoices = data.data.invoices;
+
+  let totalBilled = 0;
+  let totalPaid = 0;
+  let totalDue = 0;
+
+  invoices.forEach(i => {
+    if(i.status !== 'cancelled'){
+      totalBilled += Number(i.payable_amount);
+      totalPaid += Number(i.paid_amount);
+      totalDue += Number(i.due_amount);
+    }
+  });
+
+  document.getElementById('patient-billed').textContent = '৳' + totalBilled.toFixed(2);
+  document.getElementById('patient-paid').textContent = '৳' + totalPaid.toFixed(2);
+  document.getElementById('patient-due').textContent = '৳' + totalDue.toFixed(2);
+
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Invoice #</th>
+            <th>Date</th>
+            <th>Payable</th>
+            <th>Paid</th>
+            <th>Due</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${invoices.map(i => `
+            <tr>
+              <td><strong>${i.invoice_number}</strong></td>
+              <td>${new Date(i.created_at).toLocaleDateString()}</td>
+              <td>৳${Number(i.payable_amount).toFixed(2)}</td>
+              <td style="color:var(--c-success,#10b981)">৳${Number(i.paid_amount).toFixed(2)}</td>
+              <td style="color:var(--c-danger,#ef4444);font-weight:600">৳${Number(i.due_amount).toFixed(2)}</td>
+              <td><span class="badge badge-${i.status==='paid'?'success':i.status==='partial'?'info':i.status==='cancelled'?'danger':'warn'}">${i.status}</span></td>
+              <td>
+                <button class="btn btn-secondary btn-sm" onclick="viewInvoice(${i.id})">Receipt</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function viewInvoice(invoiceId){
+  const {ok, data} = await api('GET', `/api/billing/invoices/${invoiceId}`);
+  if(!ok || !data.data.invoice){
+    toast('Failed to load invoice', 'error');
+    return;
+  }
+
+  const inv = data.data.invoice;
+  const container = document.getElementById('invoice-printable');
+  container.innerHTML = `
+    <div style="text-align:center;margin-bottom:1.5rem">
+      <h2 style="margin-bottom:0.25rem">${inv.hospital_name || 'Nirog Healthcare'}</h2>
+      <p class="text-muted" style="font-size:0.875rem">${inv.hospital_address || ''}</p>
+      <div style="display:inline-block;padding:0.25rem 0.75rem;background:var(--c-primary-lt);color:var(--c-primary);border-radius:20px;font-weight:700;margin-top:0.5rem">
+        PATIENT MONEY RECEIPT
+      </div>
+    </div>
+
+    <div class="grid-2" style="background:var(--c-bg-subtle,#f8fafc);padding:1rem;border-radius:8px;margin-bottom:1.5rem">
+      <div>
+        <strong>Bill To:</strong> ${inv.patient_name || 'Patient'}<br>
+        <small class="text-muted">Patient ID: #${inv.patient_id}</small>
+      </div>
+      <div style="text-align:right">
+        <strong>Invoice #:</strong> ${inv.invoice_number}<br>
+        <small class="text-muted">Date: ${new Date(inv.created_at).toLocaleString()}</small><br>
+        <small class="text-muted">Status: <strong>${inv.status.toUpperCase()}</strong></small>
+      </div>
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;margin-bottom:1.5rem">
+      <thead>
+        <tr style="border-bottom:2px solid var(--c-border);text-align:left">
+          <th style="padding:0.5rem">Description</th>
+          <th style="padding:0.5rem;text-align:center">Qty</th>
+          <th style="padding:0.5rem;text-align:right">Amount (৳)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${(inv.items || []).map(item => `
+          <tr style="border-bottom:1px solid var(--c-border)">
+            <td style="padding:0.5rem">${item.description}</td>
+            <td style="padding:0.5rem;text-align:center">${item.quantity}</td>
+            <td style="padding:0.5rem;text-align:right;font-weight:600">৳${Number(item.total_price).toFixed(2)}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+
+    <div style="display:flex;justify-content:flex-end;margin-bottom:1.5rem">
+      <div style="width:250px">
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0"><span>Subtotal:</span> <strong>৳${Number(inv.total_amount).toFixed(2)}</strong></div>
+        ${inv.discount_amount > 0 ? `<div style="display:flex;justify-content:space-between;padding:0.25rem 0;color:var(--c-success)"><span>Discount:</span> <strong>-৳${Number(inv.discount_amount).toFixed(2)}</strong></div>` : ''}
+        ${inv.tax_amount > 0 ? `<div style="display:flex;justify-content:space-between;padding:0.25rem 0"><span>Tax:</span> <strong>+৳${Number(inv.tax_amount).toFixed(2)}</strong></div>` : ''}
+        <div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-top:2px solid var(--c-border);font-size:1.1rem;font-weight:700"><span>Payable:</span> <span>৳${Number(inv.payable_amount).toFixed(2)}</span></div>
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0;color:var(--c-success,#10b981)"><span>Paid:</span> <strong>৳${Number(inv.paid_amount).toFixed(2)}</strong></div>
+        <div style="display:flex;justify-content:space-between;padding:0.25rem 0;color:var(--c-danger,#ef4444);font-weight:700"><span>Due:</span> <strong>৳${Number(inv.due_amount).toFixed(2)}</strong></div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('view-invoice-modal').style.display = 'flex';
+}
+
+function closeViewInvoiceModal(){
+  document.getElementById('view-invoice-modal').style.display = 'none';
+}
+
+loadPatientInvoices();
+</script>
+{% endblock %}

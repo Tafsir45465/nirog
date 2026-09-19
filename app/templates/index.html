@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+
+{% block body %}
+<div style="padding:3rem 1.25rem;">
+  <div class="container">
+    <div style="text-align:center;margin-bottom:3rem">
+      <h1 style="font-size:2.5rem;font-weight:900;color:var(--c-primary);margin-bottom:.5rem">Welcome to Nirog</h1>
+      <p style="font-size:1.125rem;color:var(--c-muted);margin-bottom:1.5rem">Find doctors, book appointments, and manage your health online</p>
+      {% if not session.get('user') %}
+        <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap">
+          <a href="/patient/find-doctor" class="btn btn-primary btn-lg">Find a Doctor</a>
+          <a href="/auth/register" class="btn btn-secondary btn-lg">Get Started</a>
+        </div>
+      {% else %}
+        <a href="/patient/dashboard" class="btn btn-primary btn-lg">Go to Dashboard</a>
+      {% endif %}
+    </div>
+
+    <div class="grid-2" style="margin-top:3rem">
+      <div class="card">
+        <div style="font-size:2rem;margin-bottom:.75rem">🏥</div>
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:.5rem">Multi-Hospital Network</h3>
+        <p class="text-muted">Access doctors from multiple hospitals and clinics in one place</p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem;margin-bottom:.75rem">📅</div>
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:.5rem">Easy Booking</h3>
+        <p class="text-muted">Browse doctors, check availability, and book appointments instantly</p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem;margin-bottom:.75rem">💊</div>
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:.5rem">Digital Prescriptions</h3>
+        <p class="text-muted">View and download prescriptions directly from your health profile</p>
+      </div>
+      <div class="card">
+        <div style="font-size:2rem;margin-bottom:.75rem">🎯</div>
+        <h3 style="font-size:1.125rem;font-weight:700;margin-bottom:.5rem">Smart Recommendations</h3>
+        <p class="text-muted">Get specialty recommendations based on your symptoms</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

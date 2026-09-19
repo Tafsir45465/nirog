@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Doctor Dashboard{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Doctor menu">
+    <div class="sidebar-section">Doctor Portal</div>
+    <a href="/doctor/dashboard" class="sidebar-link active">
+      <span class="icon">📊</span> Dashboard
+    </a>
+    <a href="/doctor/queue" class="sidebar-link">
+      <span class="icon">👥</span> Queue
+    </a>
+    <a href="/doctor/profile" class="sidebar-link">
+      <span class="icon">👤</span> My Profile
+    </a>
+  </aside>
+  <main class="main-content">
+    <div class="page-header">
+      <h1>Doctor Dashboard</h1>
+      <p id="doctor-info" class="text-muted">Loading your information…</p>
+    </div>
+
+    <div class="grid-4">
+      <div class="stat-card">
+        <div class="val" id="today-count">-</div>
+        <div class="lbl">Today's Appointments</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="waiting-count">-</div>
+        <div class="lbl">Waiting</div>
+      </div>
+      <div class="stat-card">
+        <div class="val" id="completed-count">-</div>
+        <div class="lbl">Completed</div>
+      </div>
+    </div>
+
+    <div class="card mt-3">
+      <div class="card-header">
+        <h2 class="card-title">Today's Appointments</h2>
+        <a href="/doctor/queue" class="btn btn-primary btn-sm">View Queue</a>
+      </div>
+      <div id="appointments-list">
+        <div class="empty"><div class="empty-icon">📅</div><p>No appointments today</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'doctor') { window.location.href = '/auth/login'; }
+
+async function loadDashboard(){
+  const {ok, data} = await api('GET', '/api/appointments');
+  if(!ok) return;
+
+  const all = data.data.appointments || [];
+  const today = new Date().toDateString();
+  const todayAppts = all.filter(a => new Date(a.scheduled_start).toDateString() === today);
+  const waiting = todayAppts.filter(a => a.status === 'waiting');
+  const completed = todayAppts.filter(a => a.status === 'completed');
+
+  document.getElementById('today-count').textContent = todayAppts.length;
+  document.getElementById('waiting-count').textContent = waiting.length;
+  document.getElementById('completed-count').textContent = completed.length;
+
+  const list = document.getElementById('appointments-list');
+  if(todayAppts.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><p>No appointments today</p></div>';
+  } else {
+    list.innerHTML = '<div class="table-wrap"><table><thead><tr><th>Time</th><th>Patient</th><th>Type</th><th>Status</th><th></th></tr></thead><tbody>' +
+      todayAppts.map(a => `<tr>
+        <td>${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+        <td>${a.patient_name}</td>
+        <td><span class="badge badge-info">${a.appointment_type}</span></td>
+        <td><span class="badge badge-${a.status==='waiting'?'warn':'neutral'}">${a.status}</span></td>
+        <td><a href="/doctor/consultation/${a.id}" class="btn btn-ghost btn-sm">Consult</a></td>
+      </tr>`).join('') +
+      '</tbody></table></div>';
+  }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 30000);
+</script>
+{% endblock %}

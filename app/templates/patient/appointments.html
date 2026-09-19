@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}My Appointments{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Patient menu">
+    <div class="sidebar-section">Patient Portal</div>
+    <a href="/patient/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/patient/appointments" class="sidebar-link active"><span class="icon">📅</span> Appointments</a>
+    <a href="/patient/prescriptions" class="sidebar-link"><span class="icon">💊</span> Prescriptions</a>
+    <a href="/patient/lab-reports" class="sidebar-link"><span class="icon">🧪</span> Lab Reports</a>
+    <a href="/patient/find-doctor" class="sidebar-link"><span class="icon">🔍</span> Find Doctor</a>
+    <a href="/patient/profile" class="sidebar-link"><span class="icon">👤</span> My Profile</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>My Appointments</h1>
+        <p class="text-muted">Track and manage your upcoming and past visits</p>
+      </div>
+      <a href="/patient/find-doctor" class="btn btn-primary">+ Book Appointment</a>
+    </div>
+
+    <div class="card">
+      <div id="appointments-list">
+        <div class="empty"><div class="empty-icon">📅</div><p>Loading appointments...</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'patient') { window.location.href = '/auth/login'; }
+
+async function loadAppointments(){
+  const {ok, data} = await api('GET', '/api/appointments');
+  const list = document.getElementById('appointments-list');
+  if(!ok || !data.data.appointments || data.data.appointments.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">📅</div><p>No appointments found.</p><a href="/patient/find-doctor" class="btn btn-secondary mt-2">Find a Doctor</a></div>';
+    return;
+  }
+
+  const appts = data.data.appointments;
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Date & Time</th>
+            <th>Doctor</th>
+            <th>Hospital</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${appts.map(a => `
+            <tr>
+              <td><strong>${new Date(a.scheduled_start).toLocaleDateString()}</strong> <small class="text-muted">${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</small></td>
+              <td>${a.doctor_name}</td>
+              <td>${a.hospital_name}</td>
+              <td><span class="badge badge-${a.status==='completed'?'success':a.status==='checked_in'||a.status==='waiting'?'info':a.status==='cancelled'?'danger':'neutral'}">${a.status}</span></td>
+              <td>
+                ${a.status==='booked' || a.status==='confirmed' ? `<button class="btn btn-ghost btn-sm" onclick="cancelAppointment(${a.id})">Cancel</button>` : '-'}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function cancelAppointment(id){
+  if(!confirm('Are you sure you want to cancel this appointment?')) return;
+  const {ok, error} = await api('POST', `/api/appointments/${id}/cancel`, {reason: 'Patient cancelled'});
+  if(ok){
+    toast('Appointment cancelled', 'info');
+    loadAppointments();
+  } else {
+    toast(error || 'Failed to cancel', 'error');
+  }
+}
+
+loadAppointments();
+</script>
+{% endblock %}

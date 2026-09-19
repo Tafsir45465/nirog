@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Doctor Queue{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <aside class="sidebar" role="navigation" aria-label="Doctor menu">
+    <div class="sidebar-section">Doctor Portal</div>
+    <a href="/doctor/dashboard" class="sidebar-link"><span class="icon">📊</span> Dashboard</a>
+    <a href="/doctor/queue" class="sidebar-link active"><span class="icon">👥</span> Queue</a>
+  </aside>
+
+  <main class="main-content">
+    <div class="page-header" style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h1>Live Patient Queue</h1>
+        <p class="text-muted">Manage today's consultations and token calls</p>
+      </div>
+      <button class="btn btn-primary" onclick="callNextPatient()">Call Next Patient</button>
+    </div>
+
+    <div class="card">
+      <div id="queue-list">
+        <div class="empty"><div class="empty-icon">👥</div><p>Loading queue...</p></div>
+      </div>
+    </div>
+  </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const user = getUser();
+if(!user || user.role !== 'doctor') { window.location.href = '/auth/login'; }
+
+async function loadQueue(){
+  const {ok, data} = await api('GET', '/api/appointments');
+  const list = document.getElementById('queue-list');
+  if(!ok || !data.data.appointments || data.data.appointments.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">👥</div><p>No waiting patients in queue.</p></div>';
+    return;
+  }
+
+  const today = new Date().toDateString();
+  const waiting = data.data.appointments.filter(a => new Date(a.scheduled_start).toDateString() === today && (a.status === 'checked_in' || a.status === 'waiting' || a.status === 'in_consultation'));
+
+  if(waiting.length === 0){
+    list.innerHTML = '<div class="empty"><div class="empty-icon">✅</div><p>No waiting patients today.</p></div>';
+    return;
+  }
+
+  list.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Patient Name</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${waiting.map(a => `
+            <tr>
+              <td>${new Date(a.scheduled_start).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</td>
+              <td><strong>${a.patient_name}</strong></td>
+              <td><span class="badge badge-info">${a.appointment_type}</span></td>
+              <td><span class="badge badge-${a.status==='in_consultation'?'warn':a.status==='waiting'?'info':'neutral'}">${a.status}</span></td>
+              <td>
+                <a href="/doctor/consultation/${a.id}" class="btn btn-primary btn-sm">Start Consultation</a>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function callNextPatient(){
+  toast('Calling next patient in queue...', 'info');
+  loadQueue();
+}
+
+loadQueue();
+setInterval(loadQueue, 15000);
+</script>
+{% endblock %}

@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Login{% endblock %}
+
+{% block body %}
+<div style="min-height:calc(100vh - 60px);display:flex;align-items:center;justify-content:center;padding:2rem 1rem;">
+  <div style="width:100%;max-width:420px;">
+    <div class="card">
+      <div style="text-align:center;margin-bottom:1.75rem;">
+        <div style="font-size:2rem;font-weight:800;color:var(--c-primary)">NirogHealth</div>
+        <p style="color:var(--c-muted);margin-top:.4rem">Sign in to your account</p>
+      </div>
+      <div id="error-msg" class="alert alert-danger" style="display:none"></div>
+      <form id="login-form" novalidate>
+        <div class="form-group">
+          <label for="email">Email address</label>
+          <input type="email" id="email" name="email" required autocomplete="email"
+                 placeholder="you@example.com" aria-required="true">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" name="password" required
+                 autocomplete="current-password" placeholder="••••••••" aria-required="true">
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg" style="width:100%;margin-top:.5rem" id="submit-btn">
+          Sign in
+        </button>
+      </form>
+      <hr class="divider">
+      <p class="text-center text-muted">
+        Don't have an account? <a href="/auth/register">Register as patient</a>
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById('login-form').addEventListener('submit', async function(e){
+  e.preventDefault();
+  const btn = document.getElementById('submit-btn');
+  const err = document.getElementById('error-msg');
+  err.style.display = 'none';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Signing in…';
+
+  const {ok, data} = await api('POST', '/api/auth/login', {
+    email: this.email.value.trim(),
+    password: this.password.value
+  });
+
+  if(!ok){
+    err.textContent = data.message || 'Login failed. Please check your credentials.';
+    err.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Sign in';
+    return;
+  }
+
+  setAuth(data.data.access_token, data.data.refresh_token, data.data.user);
+  const role = data.data.user.role;
+  const redirects = {
+    patient: '/patient/dashboard',
+    doctor: '/doctor/dashboard',
+    receptionist: '/receptionist/dashboard',
+    admin: '/admin/dashboard',
+    super_admin: '/admin/dashboard'
+  };
+  window.location.href = redirects[role] || '/';
+});
+</script>
+{% endblock %}

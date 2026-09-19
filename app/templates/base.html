@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Nirog{% endblock %} – Nirog Health</title>
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────── */
+    :root {
+      --c-bg:          #f8fafc;
+      --c-surface:     #ffffff;
+      --c-border:      #e2e8f0;
+      --c-text:        #0f172a;
+      --c-muted:       #64748b;
+      --c-primary:     #0057b8;
+      --c-primary-dk:  #004294;
+      --c-primary-lt:  #e8f0fb;
+      --c-success:     #047857;
+      --c-success-lt:  #d1fae5;
+      --c-warning:     #b45309;
+      --c-warning-lt:  #fef3c7;
+      --c-danger:      #b91c1c;
+      --c-danger-lt:   #fee2e2;
+      --c-accent:      #0891b2;
+      --radius-sm:     6px;
+      --radius-md:     10px;
+      --radius-lg:     16px;
+      --shadow-sm:     0 1px 3px rgba(0,0,0,.08);
+      --shadow-md:     0 4px 16px rgba(0,0,0,.10);
+      --nav-h:         60px;
+      --transition-fast:   .15s ease;
+      --transition-normal:  .25s ease;
+      --transition-slow:   .4s ease;
+      color-scheme: light;
+    }
+
+    /* ── Dark mode ─────────────────────────────────────────────── */
+    [data-theme="dark"] {
+      --c-bg:          #0f172a;
+      --c-surface:     #1e293b;
+      --c-border:      #334155;
+      --c-text:        #f1f5f9;
+      --c-muted:       #94a3b8;
+      --c-primary-lt:  #1e3a5f;
+      --c-success-lt:  #064e3b;
+      --c-warning-lt:  #78350f;
+      --c-danger-lt:   #7f1d1d;
+      color-scheme: dark;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --c-bg:          #0f172a;
+        --c-surface:     #1e293b;
+        --c-border:      #334155;
+        --c-text:        #f1f5f9;
+        --c-muted:       #94a3b8;
+        --c-primary-lt:  #1e3a5f;
+        --c-success-lt:  #064e3b;
+        --c-warning-lt:  #78350f;
+        --c-danger-lt:   #7f1d1d;
+        color-scheme: dark;
+      }
+    }
+
+    /* ── Reset & base ──────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 16px; scroll-behavior: smooth; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+           background: var(--c-bg); color: var(--c-text); line-height: 1.6;
+           min-height: 100vh; transition: background var(--transition-normal), color var(--transition-normal); }
+    a { color: var(--c-primary); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { cursor: pointer; font-family: inherit; }
+    img { max-width: 100%; }
+    input, select, textarea {
+      font-family: inherit; font-size: .9375rem;
+      border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+      padding: .5rem .75rem; background: var(--c-surface); color: var(--c-text); width: 100%;
+      transition: border-color var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-normal);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none; border-color: var(--c-primary);
+      box-shadow: 0 0 0 3px rgba(0,87,184,.15);
+    }
+    input::placeholder, textarea::placeholder { color: var(--c-muted); opacity: .7; }
+    label { display: block; font-size: .875rem; font-weight: 600;
+            color: var(--c-muted); margin-bottom: .375rem; }
+
+    /* ── Utilities ─────────────────────────────────────────────── */
+    .sr-only { position:absolute; width:1px; height:1px; padding:0;
+               margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
+    .container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 1.25rem; }
+    .flex { display: flex; }
+    .gap-1 { gap: .5rem; } .gap-2 { gap: 1rem; }
+    .items-center { align-items: center; }
+    .justify-between { justify-content: space-between; }
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1.5rem; }
+    .grid-3 { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1.25rem; }
+    .grid-4 { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; }
+    .mt-1 { margin-top: .5rem; } .mt-2 { margin-top: 1rem; } .mt-3 { margin-top: 1.5rem; }
+    .mb-2 { margin-bottom: 1rem; } .mb-3 { margin-bottom: 1.5rem; }
+    .text-muted { color: var(--c-muted); font-size: .875rem; }
+    .text-center { text-align: center; }
+    .text-right { text-align: right; }
+
+    /* ── Navbar ────────────────────────────────────────────────── */
+    .navbar {
+      height: var(--nav-h); background: var(--c-surface);
+      border-bottom: 1px solid var(--c-border); position: sticky; top: 0; z-index: 100;
+      box-shadow: var(--shadow-sm); transition: background var(--transition-normal), border-color var(--transition-normal);
+    }
+    .navbar .inner { display: flex; align-items: center;
+                     justify-content: space-between; height: 100%; }
+    .brand { font-size: 1.375rem; font-weight: 800; color: var(--c-primary);
+             letter-spacing: -.5px; transition: color var(--transition-fast); }
+    .brand span { color: var(--c-text); transition: color var(--transition-normal); }
+    .nav-links { display: flex; align-items: center; gap: .25rem; }
+    .nav-links a { padding: .4rem .75rem; border-radius: var(--radius-sm);
+                   font-size: .9rem; font-weight: 500; color: var(--c-muted);
+                   transition: background var(--transition-fast), color var(--transition-fast); }
+    .nav-links a:hover, .nav-links a.active { background: var(--c-primary-lt);
+      color: var(--c-primary); text-decoration: none; }
+    .hamburger { display: none; background: none; border: none;
+                 padding: .5rem; border-radius: var(--radius-sm); color: var(--c-text); }
+    .hamburger svg { display: block; }
+    #mobile-menu { display: none; background: var(--c-surface);
+                   border-bottom: 1px solid var(--c-border); padding: .75rem 1.25rem; }
+    #mobile-menu a { display: block; padding: .6rem 0;
+                     border-bottom: 1px solid var(--c-border);
+                     color: var(--c-text); font-weight: 500; }
+    .theme-toggle { background: none; border: none; padding: .4rem; border-radius: var(--radius-sm);
+                    color: var(--c-muted); transition: color var(--transition-fast), background var(--transition-fast); }
+    .theme-toggle:hover { color: var(--c-primary); background: var(--c-primary-lt); }
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hamburger { display: block; }
+    }
+
+    /* ── Buttons ───────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: .4rem; padding: .55rem 1.25rem; border: none;
+      border-radius: var(--radius-sm); font-size: .9375rem; font-weight: 600;
+      transition: background var(--transition-fast), transform .1s, box-shadow var(--transition-fast), color var(--transition-fast);
+      white-space: nowrap;
+    }
+    .btn:active { transform: translateY(1px); }
+    .btn:focus-visible { outline: 3px solid var(--c-primary); outline-offset: 2px; }
+    .btn-primary { background: var(--c-primary); color: #fff; }
+    .btn-primary:hover { background: var(--c-primary-dk); text-decoration: none; box-shadow: var(--shadow-md); }
+    .btn-secondary { background: var(--c-primary-lt); color: var(--c-primary); }
+    .btn-secondary:hover { background: #d0e3f7; text-decoration: none; }
+    .btn-danger { background: var(--c-danger); color: #fff; }
+    .btn-danger:hover { background: #991b1b; text-decoration: none; }
+    .btn-ghost { background: transparent; color: var(--c-muted); border: 1px solid var(--c-border); }
+    .btn-ghost:hover { background: var(--c-primary-lt); color: var(--c-primary); text-decoration: none; border-color: var(--c-primary); }
+    .btn-sm { padding: .35rem .9rem; font-size: .875rem; }
+    .btn-lg { padding: .75rem 1.75rem; font-size: 1rem; }
+    .btn:disabled { opacity: .55; pointer-events: none; }
+
+    /* ── Cards ─────────────────────────────────────────────────── */
+    .card { background: var(--c-surface); border: 1px solid var(--c-border);
+            border-radius: var(--radius-md); padding: 1.5rem;
+            box-shadow: var(--shadow-sm); transition: background var(--transition-normal), border-color var(--transition-normal), box-shadow var(--transition-fast), transform var(--transition-fast); }
+    .card:hover { box-shadow: var(--shadow-md); }
+    .card-header { display: flex; align-items: center; justify-content: space-between;
+                   margin-bottom: 1.25rem; flex-wrap: wrap; gap: .5rem; }
+    .card-title { font-size: 1rem; font-weight: 700; color: var(--c-text); }
+
+    /* ── Stat card ─────────────────────────────────────────────── */
+    .stat-card { background: var(--c-surface); border: 1px solid var(--c-border);
+                 border-radius: var(--radius-md); padding: 1.25rem 1.5rem;
+                 box-shadow: var(--shadow-sm); transition: background var(--transition-normal), border-color var(--transition-normal), transform var(--transition-fast); }
+    .stat-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); }
+    .stat-card .val { font-size: 2rem; font-weight: 800; color: var(--c-primary); line-height: 1; }
+    .stat-card .lbl { font-size: .8125rem; color: var(--c-muted); margin-top: .3rem;
+                      text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ── Badges ────────────────────────────────────────────────── */
+    .badge { display: inline-block; padding: .2rem .65rem; border-radius: 999px;
+             font-size: .78rem; font-weight: 600; transition: background var(--transition-fast), color var(--transition-fast); }
+    .badge-success { background: var(--c-success-lt); color: var(--c-success); }
+    .badge-warn    { background: var(--c-warning-lt); color: var(--c-warning); }
+    .badge-danger  { background: var(--c-danger-lt);  color: var(--c-danger); }
+    .badge-info    { background: #e0f2fe; color: #0369a1; }
+    [data-theme="dark"] .badge-info { background: #0c4a6e; color: #7dd3fc; }
+    .badge-neutral { background: var(--c-primary-lt); color: var(--c-muted); }
+
+    /* ── Alerts ────────────────────────────────────────────────── */
+    .alert { padding: .875rem 1.1rem; border-radius: var(--radius-sm);
+             font-size: .9375rem; border-left: 4px solid; margin-bottom: 1rem;
+             transition: background var(--transition-normal), border-color var(--transition-normal); }
+    .alert-danger  { background: var(--c-danger-lt);  border-color: var(--c-danger);
+                     color: var(--c-danger); }
+    .alert-success { background: var(--c-success-lt); border-color: var(--c-success);
+                     color: var(--c-success); }
+    .alert-warn    { background: var(--c-warning-lt); border-color: var(--c-warning);
+                     color: var(--c-warning); }
+
+    /* ── Form groups ───────────────────────────────────────────── */
+    .form-group { margin-bottom: 1.1rem; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+    .form-error { font-size: .8125rem; color: var(--c-danger); margin-top: .3rem; }
+    @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
+
+    /* ── Table ─────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .9375rem; }
+    th { text-align: left; font-size: .8125rem; text-transform: uppercase;
+         letter-spacing: .05em; color: var(--c-muted); border-bottom: 2px solid var(--c-border);
+         padding: .7rem 1rem; }
+    td { padding: .75rem 1rem; border-bottom: 1px solid var(--c-border);
+         vertical-align: middle; color: var(--c-text); }
+    tr:last-child td { border-bottom: none; }
+    tbody tr { transition: background var(--transition-fast); }
+    tbody tr:hover { background: var(--c-primary-lt); }
+
+    /* ── Sidebar layout ────────────────────────────────────────── */
+    .layout { display: flex; min-height: calc(100vh - var(--nav-h)); }
+    .sidebar { width: 230px; flex-shrink: 0; background: var(--c-surface);
+               border-right: 1px solid var(--c-border); padding: 1.25rem 0;
+               transition: background var(--transition-normal), border-color var(--transition-normal); }
+    .sidebar-link { display: flex; align-items: center; gap: .65rem;
+                    padding: .65rem 1.25rem; color: var(--c-muted); font-size: .9375rem;
+                    font-weight: 500; transition: background var(--transition-fast), color var(--transition-fast); }
+    .sidebar-link:hover, .sidebar-link.active { background: var(--c-primary-lt);
+      color: var(--c-primary); text-decoration: none; }
+    .sidebar-link .icon { width: 18px; height: 18px; opacity: .7; }
+    .sidebar-section { font-size: .75rem; font-weight: 700; text-transform: uppercase;
+                       letter-spacing: .07em; color: var(--c-muted); padding: 1rem 1.25rem .3rem; }
+    .main-content { flex: 1; padding: 2rem 1.5rem; overflow: auto; }
+    @media (max-width: 768px) {
+      .layout { flex-direction: column; }
+      .sidebar { width: 100%; border-right: none; border-bottom: 1px solid var(--c-border); padding: .5rem 0; display: flex; flex-wrap: wrap; gap: .25rem; }
+      .sidebar-section { width: 100%; }
+      .sidebar-link { padding: .5rem 1rem; }
+    }
+
+    /* ── Toast notifications ───────────────────────────────────── */
+    #toast-container { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 999;
+                       display: flex; flex-direction: column; gap: .5rem;
+                       max-width: 340px; }
+    .toast { background: var(--c-text); color: var(--c-bg); padding: .85rem 1.1rem;
+             border-radius: var(--radius-sm); font-size: .9rem; box-shadow: var(--shadow-md);
+             animation: slide-in .25s ease; }
+    .toast.success { background: var(--c-success); color: #fff; }
+    .toast.error   { background: var(--c-danger); color: #fff; }
+    .toast.warn    { background: var(--c-warning); color: #fff; }
+    @keyframes slide-in { from { transform: translateX(120%); opacity: 0; }
+                          to   { transform: none; opacity: 1; } }
+
+    /* ── Loading spinner ───────────────────────────────────────── */
+    .spinner { display: inline-block; width: 20px; height: 20px;
+               border: 2px solid rgba(0,87,184,.2); border-top-color: var(--c-primary);
+               border-radius: 50%; animation: spin .6s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ───────────────────────────────────────────── */
+    .empty { padding: 3rem 1rem; text-align: center; color: var(--c-muted); }
+    .empty .empty-icon { font-size: 2.5rem; margin-bottom: .75rem; opacity: .6; }
+
+    /* ── Page header ───────────────────────────────────────────── */
+    .page-header { margin-bottom: 1.75rem; }
+    .page-header h1 { font-size: 1.5rem; font-weight: 800; color: var(--c-text); }
+    .page-header p  { color: var(--c-muted); margin-top: .25rem; font-size: .9375rem; }
+
+    /* ── Modal ─────────────────────────────────────────────────── */
+    [id$="-modal"] { animation: fade-in .2s ease; }
+    @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+    /* ── Misc ──────────────────────────────────────────────────── */
+    .divider { border: none; border-top: 1px solid var(--c-border); margin: 1.5rem 0; }
+    .fade-in { animation: fade-in .3s ease; }
+    .slide-up { animation: slide-up .3s ease; }
+    @keyframes slide-up { from { transform: translateY(10px); opacity: 0; }
+                          to   { transform: none; opacity: 1; } }
+
+    /* ── Skeleton loading ──────────────────────────────────────── */
+    .skeleton { background: linear-gradient(90deg, var(--c-border) 25%, var(--c-surface) 50%, var(--c-border) 75%);
+                background-size: 200% 100%; animation: skeleton-loading 1.5s infinite; border-radius: var(--radius-sm); }
+    @keyframes skeleton-loading { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<!-- Navbar -->
+<nav class="navbar" role="navigation" aria-label="Main navigation">
+  <div class="container inner">
+    <a class="brand" href="/" aria-label="Nirog Home">Nirog<span>Health</span></a>
+    <div class="nav-links" id="nav-links">
+      {% block nav_links %}
+      <a href="/patient/find-doctor">Find Doctor</a>
+      <a href="/hospitals">Hospitals</a>
+      <a href="/recommend">Symptom Guide</a>
+      {% if session.get('user') %}
+        {% set role = session['user']['role'] %}
+        {% if role == 'patient' %}<a href="/patient/dashboard">My Dashboard</a>{% endif %}
+        {% if role == 'doctor' %}<a href="/doctor/dashboard">Dashboard</a>{% endif %}
+        {% if role == 'receptionist' %}<a href="/receptionist/dashboard">Dashboard</a>{% endif %}
+        {% if role in ('admin','super_admin') %}<a href="/admin/dashboard">Admin</a>{% endif %}
+        <button class="theme-toggle" onclick="toggleTheme()" aria-label="Toggle dark mode" title="Toggle theme">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+        </button>
+        <a href="/auth/logout" class="btn btn-ghost btn-sm" style="margin-left:.5rem">Logout</a>
+      {% else %}
+        <a href="/auth/login" class="btn btn-ghost btn-sm">Login</a>
+        <a href="/auth/register" class="btn btn-primary btn-sm" style="margin-left:.25rem">Register</a>
+      {% endif %}
+      {% endblock %}
+    </div>
+    <button class="hamburger" aria-label="Toggle menu" aria-expanded="false"
+            onclick="toggleMobile(this)">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </button>
+  </div>
+</nav>
+<div id="mobile-menu" aria-hidden="true">
+  {% if session.get('user') %}
+    <a href="/patient/dashboard">Dashboard</a>
+    <a href="/find-doctor">Find Doctor</a>
+    <a href="/auth/logout">Logout</a>
+  {% else %}
+    <a href="/find-doctor">Find Doctor</a>
+    <a href="/hospitals">Hospitals</a>
+    <a href="/auth/login">Login</a>
+    <a href="/auth/register">Register</a>
+  {% endif %}
+</div>
+
+{% block body %}{% endblock %}
+
+<!-- Toast container -->
+<div id="toast-container" role="status" aria-live="polite"></div>
+
+<script>
+/* ── Theme management ────────────────────────────────── */
+function initTheme(){
+  const saved = localStorage.getItem('nirog_theme');
+  if(saved === 'dark' || saved === 'light'){
+    document.documentElement.setAttribute('data-theme', saved);
+  }
+}
+initTheme();
+
+function toggleTheme(){
+  const current = document.documentElement.getAttribute('data-theme');
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('nirog_theme', next);
+}
+
+/* ── Mobile nav ──────────────────────────────────────── */
+function toggleMobile(btn){
+  const m = document.getElementById('mobile-menu');
+  const open = m.style.display === 'block';
+  m.style.display = open ? 'none' : 'block';
+  btn.setAttribute('aria-expanded', !open);
+  m.setAttribute('aria-hidden', open);
+}
+
+/* ── Toast ───────────────────────────────────────────── */
+function toast(msg, type='info', ms=3500){
+  const c = document.getElementById('toast-container');
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  el.textContent = msg;
+  c.appendChild(el);
+  setTimeout(()=>{ el.style.opacity='0'; el.style.transform='translateX(120%)'; setTimeout(()=>el.remove(),200); }, ms);
+}
+
+/* ── API helper ──────────────────────────────────────── */
+async function api(method, path, body, opts={}){
+  const headers = {'Content-Type':'application/json'};
+  const token = sessionStorage.getItem('nirog_token');
+  if(token) headers['Authorization'] = 'Bearer '+token;
+  const resp = await fetch(path,{method, headers, body: body ? JSON.stringify(body) : undefined, ...opts});
+  const data = await resp.json().catch(()=>({}));
+  return {ok: resp.ok, status: resp.status, data};
+}
+
+async function downloadAuthenticated(path, fallbackName='export.csv'){
+  const token = sessionStorage.getItem('nirog_token');
+  const headers = {};
+  if(token) headers['Authorization'] = 'Bearer '+token;
+  const resp = await fetch(path, {headers});
+  if(!resp.ok){
+    let message = 'Download failed';
+    try { const data = await resp.json(); message = data.message || message; } catch {}
+    toast(message, 'error');
+    return;
+  }
+  const blob = await resp.blob();
+  const disposition = resp.headers.get('Content-Disposition') || '';
+  const match = disposition.match(/filename\*?=(?:UTF-8''|\")?([^\";]+)/i);
+  const filename = match ? decodeURIComponent(match[1].replace(/\"/g, '')) : fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  toast('Download started', 'success');
+}
+
+/* ── Login state ─────────────────────────────────────── */
+function getUser(){
+  try{ return JSON.parse(sessionStorage.getItem('nirog_user') || 'null'); }catch{ return null; }
+}
+function setAuth(token, refreshToken, user){
+  sessionStorage.setItem('nirog_token', token);
+  if(refreshToken) sessionStorage.setItem('nirog_refresh', refreshToken);
+  sessionStorage.setItem('nirog_user', JSON.stringify(user));
+}
+function clearAuth(){
+  sessionStorage.removeItem('nirog_token');
+  sessionStorage.removeItem('nirog_refresh');
+  sessionStorage.removeItem('nirog_user');
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
