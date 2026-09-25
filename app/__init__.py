@@ -19,6 +19,7 @@ def create_app(config_name: str | None = None) -> Flask:
     # for local development but does not synchronize limits across app workers.
     app.config.setdefault("RATELIMIT_STORAGE_URI", "memory://")
 
+    # Import blueprints
     from .routes.auth import bp as auth_bp
     from .routes.public import bp as public_bp
     from .routes.admin import bp as admin_bp
@@ -45,7 +46,11 @@ def create_app(config_name: str | None = None) -> Flask:
     from .routes.qr_routes import bp as qr_bp
     from .routes.reminders import bp as reminders_bp
     from .routes.smart_queue import bp as smart_queue_bp
+    from .routes.pharmacy import bp as pharmacy_bp
+    from .routes.mobile import bp as mobile_bp
+    from .commands.reminders import check_reminders_command
 
+    # Register blueprints
     app.register_blueprint(auth_bp)
     app.register_blueprint(public_bp)
     app.register_blueprint(admin_bp)
@@ -72,6 +77,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(qr_bp)
     app.register_blueprint(reminders_bp)
     app.register_blueprint(smart_queue_bp)
+    app.register_blueprint(pharmacy_bp)
+    app.register_blueprint(mobile_bp)
+    app.cli.add_command(check_reminders_command)
 
     from .errors import register_error_handlers
     from .security import register_security_headers

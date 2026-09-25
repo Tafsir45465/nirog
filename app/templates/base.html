@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Nirog{% endblock %} – Nirog Health</title>
+  <link rel="manifest" href="{{ url_for('static', filename='pwa/manifest.json') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/mobile.css') }}">
   <style>
     /* ── Design tokens ─────────────────────────────────────────── */
     :root {
@@ -347,6 +349,25 @@
 <!-- Toast container -->
 <div id="toast-container" role="status" aria-live="polite"></div>
 
+<!-- Bottom navigation (mobile) -->
+<nav class="bottom-nav" id="bottomNav">
+  <a href="/patient/dashboard" class="nav-link active">
+    <span class="icon">🏠</span><span class="label">Dashboard</span>
+  </a>
+  <a href="/patient/appointments" class="nav-link">
+    <span class="icon">📅</span><span class="label">Appointments</span>
+  </a>
+  <a href="/patient/prescriptions" class="nav-link">
+    <span class="icon">💊</span><span class="label">Prescriptions</span>
+  </a>
+  <a href="/patient/lab-reports" class="nav-link">
+    <span class="icon">🧪</span><span class="label">Reports</span>
+  </a>
+  <a href="/patient/profile" class="nav-link">
+    <span class="icon">👤</span><span class="label">Profile</span>
+  </a>
+</nav>
+
 <script>
 /* ── Theme management ────────────────────────────────── */
 function initTheme(){
@@ -428,10 +449,15 @@ function setAuth(token, refreshToken, user){
   if(refreshToken) sessionStorage.setItem('nirog_refresh', refreshToken);
   sessionStorage.setItem('nirog_user', JSON.stringify(user));
 }
-function clearAuth(){
-  sessionStorage.removeItem('nirog_token');
-  sessionStorage.removeItem('nirog_refresh');
-  sessionStorage.removeItem('nirog_user');
+function clearAuth(){\n  sessionStorage.removeItem('nirog_token');\n  sessionStorage.removeItem('nirog_refresh');\n  sessionStorage.removeItem('nirog_user');\n}\n\n/* ── Bottom nav activation ──────────────────────── */\nfunction activateBottomNav() {\n  const path = window.location.pathname;\n  const links = document.querySelectorAll('#bottomNav .nav-link');\n  links.forEach(link => {\n    const href = link.getAttribute('href');\n    if (path.startsWith(href) && href !== '/') {\n      link.classList.add('active');\n    } else if (path === '/' && href === '/patient/dashboard') {\n      // default active for root? not needed\n    }\n  });\n}\n// Run on DOMContentLoaded\nif (document.readyState === 'loading') {\n  document.addEventListener('DOMContentLoaded', activateBottomNav);\n} else {\n  activateBottomNav();\n}\n\n</script>
+<script>
+/* ── Service Worker Registration ──────────────────────── */ 
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/static/pwa/service-worker.js')
+      .then(reg => console.log('SW registered:', reg.scope))
+      .catch(err => console.log('SW registration failed:', err));
+  });
 }
 </script>
 {% block scripts %}{% endblock %}

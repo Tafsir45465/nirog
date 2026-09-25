@@ -18,19 +18,19 @@ def client(app):
 def test_patient_register_and_login(client):
     resp = client.post('/api/auth/register', json={
         "full_name": "Test Patient",
-        "email": "test@example.com",
+        "email": "testpatient@mail.com",
         "password": "SecurePass123!",
         "phone": "0123456789"
     })
     assert resp.status_code == 201
     data = resp.get_json()
     assert data["success"] is True
-    assert data["data"]["user"]["email"] == "test@example.com"
+    assert data["data"]["user"]["email"] == "testpatient@mail.com"
     assert data["data"]["user"]["role"] == "patient"
     assert data["data"]["patient"]["patient_code"] is not None
 
     resp = client.post('/api/auth/login', json={
-        "email": "test@example.com",
+        "email": "testpatient@mail.com",
         "password": "SecurePass123!"
     })
     assert resp.status_code == 200

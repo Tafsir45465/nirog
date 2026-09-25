@@ -19,19 +19,19 @@ class TestAuth(unittest.TestCase):
     def test_patient_register_and_login(self):
         resp = self.client.post('/api/auth/register', json={
             "full_name": "Test Patient",
-            "email": "test@example.com",
+            "email": "testpatient@mail.com",
             "password": "SecurePass123!",
             "phone": "0123456789"
         })
         self.assertEqual(resp.status_code, 201)
         data = resp.get_json()
         self.assertTrue(data["success"])
-        self.assertEqual(data["data"]["user"]["email"], "test@example.com")
+        self.assertEqual(data["data"]["user"]["email"], "testpatient@mail.com")
         self.assertEqual(data["data"]["user"]["role"], "patient")
         self.assertIsNotNone(data["data"]["patient"]["patient_code"])
 
         resp = self.client.post('/api/auth/login', json={
-            "email": "test@example.com",
+            "email": "testpatient@mail.com",
             "password": "SecurePass123!"
         })
         self.assertEqual(resp.status_code, 200)

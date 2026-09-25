@@ -19,6 +19,7 @@ class Role(str, Enum):
     ADMIN = "admin"
     DOCTOR = "doctor"
     RECEPTIONIST = "receptionist"
+    PHARMACIST = "pharmacist"
     PATIENT = "patient"
 
 
@@ -38,6 +39,8 @@ class AppointmentStatus(str, Enum):
     IN_CONSULTATION = "in_consultation"
     COMPLETED = "completed"
     CANCELLED = "cancelled"
+    RESCHEDULED = "rescheduled"
+    NO_SHOW = "no_show"
 
 
 class InvoiceStatus(str, Enum):
@@ -116,6 +119,7 @@ class User(db.Model, TimestampMixin, SoftDeleteMixin):
     doctor_profile = db.relationship("Doctor", back_populates="user", uselist=False, foreign_keys="Doctor.user_id")
     admin_profile = db.relationship("AdminProfile", back_populates="user", uselist=False, foreign_keys="AdminProfile.user_id")
     receptionist_profile = db.relationship("ReceptionistProfile", back_populates="user", uselist=False, foreign_keys="ReceptionistProfile.user_id")
+    pharmacist_profile = db.relationship("PharmacistProfile", back_populates="user", uselist=False, foreign_keys="PharmacistProfile.user_id")
     # Back-refs for user FKs in other tables
     approved_doctors = db.relationship("Doctor", foreign_keys="Doctor.approved_by_user_id", back_populates="approved_by")
     finalized_prescriptions = db.relationship("Prescription", foreign_keys="Prescription.finalized_by_user_id", back_populates="finalized_by")
@@ -331,6 +335,33 @@ class ReceptionistHospitalAssignment(db.Model, TimestampMixin):
     __table_args__ = (db.UniqueConstraint("receptionist_profile_id", "hospital_id", name="uq_receptionist_hospital"),)
 
 
+class PharmacistProfile(db.Model, TimestampMixin):
+    __tablename__ = "pharmacist_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    employee_code = db.Column(db.String(80), nullable=True)
+    license_number = db.Column(db.String(120), nullable=True, unique=True)
+
+    user = db.relationship("User", back_populates="pharmacist_profile")
+    hospital_assignments = db.relationship("PharmacistHospitalAssignment", back_populates="pharmacist_profile", cascade="all, delete-orphan")
+
+
+class PharmacistHospitalAssignment(db.Model, TimestampMixin):
+    __tablename__ = "pharmacist_hospital_assignments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    pharmacist_profile_id = db.Column(db.Integer, db.ForeignKey("pharmacist_profiles.id"), nullable=False, index=True)
+    hospital_id = db.Column(db.Integer, db.ForeignKey("hospitals.id"), nullable=False, index=True)
+    branch_id = db.Column(db.Integer, db.ForeignKey("hospital_branches.id"), nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    pharmacist_profile = db.relationship("PharmacistProfile", back_populates="hospital_assignments")
+    hospital = db.relationship("Hospital")
+    branch = db.relationship("HospitalBranch")
+    __table_args__ = (db.UniqueConstraint("pharmacist_profile_id", "hospital_id", name="uq_pharmacist_hospital"),)
+
+
 class Patient(db.Model, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "patients"
 
@@ -511,6 +542,7 @@ class MedicineCategory(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(140), unique=True, nullable=False)
     description = db.Column(db.Text, nullable=True)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
 
 
 class Medicine(db.Model, TimestampMixin):
@@ -526,6 +558,14 @@ class Medicine(db.Model, TimestampMixin):
     unit = db.Column(db.String(40), nullable=True)
     default_instructions = db.Column(db.String(500), nullable=True)
     is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    # Pharmacy inventory fields
+    unit_price = db.Column(db.Numeric(10, 2), nullable=False, default=0)  # Selling price per unit
+    purchase_price = db.Column(db.Numeric(10, 2), nullable=False, default=0)  # Purchase price per unit
+    tax_percentage = db.Column(db.Numeric(5, 2), nullable=False, default=0)  # Tax % (e.g., 5.00 for 5%)
+    is_prescription_only = db.Column(db.Boolean, default=False, nullable=False)  # Rx required
+    controlled_substance = db.Column(db.Boolean, default=False, nullable=False)  # Narcotic/controlled
+    barcode = db.Column(db.String(100), unique=True, nullable=True, index=True)  # GTIN/EAN/UPC
 
     category = db.relationship("MedicineCategory")
 
@@ -1160,4 +1200,365 @@ class Review(db.Model, TimestampMixin):
             "description": self.description,
             "verified": self.verified,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class StockStatus(str, Enum):
+    """Stock level status for inventory items."""
+    IN_STOCK = "in_stock"
+    LOW_STOCK = "low_stock"
+    OUT_OF_STOCK = "out_of_stock"
+    EXPIRED = "expired"
+    NEAR_EXPIRY = "near_expiry"
+
+
+class PharmacyInventory(db.Model, TimestampMixin, SoftDeleteMixin):
+    """Per-hospital pharmacy stock for each medicine."""
+    __tablename__ = "pharmacy_inventory"
+
+    id = db.Column(db.Integer, primary_key=True)
+    hospital_id = db.Column(db.Integer, db.ForeignKey("hospitals.id"), nullable=False, index=True)
+    medicine_id = db.Column(db.Integer, db.ForeignKey("medicines.id"), nullable=False, index=True)
+    batch_number = db.Column(db.String(100), nullable=False, index=True)
+    expiry_date = db.Column(db.Date, nullable=False, index=True)
+    quantity = db.Column(db.Integer, nullable=False, default=0)  # Current available quantity
+    reserved_quantity = db.Column(db.Integer, nullable=False, default=0)  # Reserved for pending orders
+    unit_price_override = db.Column(db.Numeric(10, 2), nullable=True)  # Hospital-specific selling price
+    purchase_price_override = db.Column(db.Numeric(10, 2), nullable=True)  # Hospital-specific purchase price
+    location = db.Column(db.String(100), nullable=True)  # Shelf/bin location
+    supplier = db.Column(db.String(200), nullable=True)
+    supplier_invoice = db.Column(db.String(100), nullable=True)
+    received_date = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    hospital = db.relationship("Hospital")
+    medicine = db.relationship("Medicine")
+
+    __table_args__ = (
+        db.UniqueConstraint("hospital_id", "medicine_id", "batch_number", name="uq_inventory_hospital_medicine_batch"),
+        db.Index("ix_inventory_hospital_expiry", "hospital_id", "expiry_date"),
+    )
+
+    @property
+    def available_quantity(self) -> int:
+        return max(0, self.quantity - self.reserved_quantity)
+
+    @property
+    def stock_status(self) -> StockStatus:
+        if self.quantity <= 0:
+            return StockStatus.OUT_OF_STOCK
+        if self.expiry_date:
+            from datetime import date
+            days_to_expiry = (self.expiry_date - date.today()).days
+            if days_to_expiry <= 0:
+                return StockStatus.EXPIRED
+            if days_to_expiry <= 30:
+                return StockStatus.NEAR_EXPIRY
+        if self.available_quantity <= 10:  # Low stock threshold
+            return StockStatus.LOW_STOCK
+        return StockStatus.IN_STOCK
+
+    def get_effective_price(self, price_type: str = "sell") -> float:
+        """Get effective price (hospital override or medicine default)."""
+        if price_type == "sell":
+            return float(self.unit_price_override) if self.unit_price_override is not None else float(self.medicine.unit_price)
+        else:  # purchase
+            return float(self.purchase_price_override) if self.purchase_price_override is not None else float(self.medicine.purchase_price)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "hospital_id": self.hospital_id,
+            "medicine_id": self.medicine_id,
+            "medicine_name": self.medicine.generic_name if self.medicine else None,
+            "brand_name": self.medicine.brand_name if self.medicine else None,
+            "strength": self.medicine.strength if self.medicine else None,
+            "dosage_form": self.medicine.dosage_form if self.medicine else None,
+            "batch_number": self.batch_number,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "quantity": self.quantity,
+            "reserved_quantity": self.reserved_quantity,
+            "available_quantity": self.available_quantity,
+            "unit_price": self.get_effective_price("sell"),
+            "purchase_price": self.get_effective_price("purchase"),
+            "location": self.location,
+            "supplier": self.supplier,
+            "stock_status": self.stock_status.value,
+            "is_prescription_only": self.medicine.is_prescription_only if self.medicine else False,
+            "controlled_substance": self.medicine.controlled_substance if self.medicine else False,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class StockMovementType(str, Enum):
+    """Types of stock movements."""
+    PURCHASE = "purchase"           # New stock received
+    SALE = "sale"                   # Dispensed to patient
+    RETURN = "return"               # Patient return
+    ADJUSTMENT = "adjustment"       # Manual adjustment (count, damage, etc.)
+    TRANSFER_IN = "transfer_in"     # Transfer from another branch
+    TRANSFER_OUT = "transfer_out"   # Transfer to another branch
+    EXPIRED = "expired"             # Written off as expired
+    DAMAGED = "damaged"             # Written off as damaged
+    RESERVED = "reserved"           # Reserved for pending order
+    RELEASED = "released"           # Reservation released
+
+
+class StockMovement(db.Model, TimestampMixin):
+    """Audit trail for all inventory changes."""
+    __tablename__ = "stock_movements"
+
+    id = db.Column(db.Integer, primary_key=True)
+    hospital_id = db.Column(db.Integer, db.ForeignKey("hospitals.id"), nullable=False, index=True)
+    inventory_id = db.Column(db.Integer, db.ForeignKey("pharmacy_inventory.id"), nullable=False, index=True)
+    movement_type = db.Column(db.Enum(StockMovementType), nullable=False, index=True)
+    quantity = db.Column(db.Integer, nullable=False)  # Positive for in, negative for out
+    previous_quantity = db.Column(db.Integer, nullable=False)
+    new_quantity = db.Column(db.Integer, nullable=False)
+    unit_cost = db.Column(db.Numeric(10, 2), nullable=True)  # Cost at time of movement
+    reference_type = db.Column(db.String(50), nullable=True)  # invoice, prescription, adjustment, transfer
+    reference_id = db.Column(db.Integer, nullable=True)  # ID of the reference document
+    reference_number = db.Column(db.String(100), nullable=True)  # Human-readable reference
+    notes = db.Column(db.Text, nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+
+    hospital = db.relationship("Hospital")
+    inventory = db.relationship("PharmacyInventory")
+    created_by = db.relationship("User")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "hospital_id": self.hospital_id,
+            "inventory_id": self.inventory_id,
+            "medicine_name": self.inventory.medicine.generic_name if self.inventory and self.inventory.medicine else None,
+            "batch_number": self.inventory.batch_number if self.inventory else None,
+            "movement_type": self.movement_type.value,
+            "quantity": self.quantity,
+            "previous_quantity": self.previous_quantity,
+            "new_quantity": self.new_quantity,
+            "unit_cost": float(self.unit_cost) if self.unit_cost else None,
+            "reference_type": self.reference_type,
+            "reference_id": self.reference_id,
+            "reference_number": self.reference_number,
+            "notes": self.notes,
+            "created_by": self.created_by.full_name if self.created_by else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class PurchaseOrderStatus(str, Enum):
+    DRAFT = "draft"
+    PENDING = "pending"
+    APPROVED = "approved"
+    ORDERED = "ordered"
+    PARTIAL_RECEIVED = "partial_received"
+    RECEIVED = "received"
+    CANCELLED = "cancelled"
+
+
+class PurchaseOrder(db.Model, TimestampMixin, SoftDeleteMixin):
+    """Purchase orders to suppliers."""
+    __tablename__ = "purchase_orders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    hospital_id = db.Column(db.Integer, db.ForeignKey("hospitals.id"), nullable=False, index=True)
+    supplier = db.Column(db.String(200), nullable=False)
+    supplier_contact = db.Column(db.String(500), nullable=True)  # Phone, email, address
+    order_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    status = db.Column(db.Enum(PurchaseOrderStatus), default=PurchaseOrderStatus.DRAFT, nullable=False, index=True)
+    order_date = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    expected_delivery_date = db.Column(db.Date, nullable=True)
+    received_date = db.Column(db.DateTime(timezone=True), nullable=True)
+    total_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    discount_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    payable_amount = db.Column(db.Numeric(12, 2), nullable=False, default=0)
+    notes = db.Column(db.Text, nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    approved_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+    approved_at = db.Column(db.DateTime(timezone=True), nullable=True)
+
+    hospital = db.relationship("Hospital")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id])
+    approved_by = db.relationship("User", foreign_keys=[approved_by_user_id])
+    items = db.relationship("PurchaseOrderItem", back_populates="purchase_order", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "hospital_id": self.hospital_id,
+            "supplier": self.supplier,
+            "supplier_contact": self.supplier_contact,
+            "order_number": self.order_number,
+            "status": self.status.value,
+            "order_date": self.order_date.isoformat() if self.order_date else None,
+            "expected_delivery_date": self.expected_delivery_date.isoformat() if self.expected_delivery_date else None,
+            "received_date": self.received_date.isoformat() if self.received_date else None,
+            "total_amount": float(self.total_amount),
+            "tax_amount": float(self.tax_amount),
+            "discount_amount": float(self.discount_amount),
+            "payable_amount": float(self.payable_amount),
+            "notes": self.notes,
+            "created_by": self.created_by.full_name if self.created_by else None,
+            "approved_by": self.approved_by.full_name if self.approved_by else None,
+            "approved_at": self.approved_at.isoformat() if self.approved_at else None,
+            "items": [item.to_dict() for item in self.items],
+        }
+
+
+class PurchaseOrderItem(db.Model, TimestampMixin):
+    __tablename__ = "purchase_order_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    purchase_order_id = db.Column(db.Integer, db.ForeignKey("purchase_orders.id"), nullable=False, index=True)
+    medicine_id = db.Column(db.Integer, db.ForeignKey("medicines.id"), nullable=False, index=True)
+    quantity_ordered = db.Column(db.Integer, nullable=False)
+    quantity_received = db.Column(db.Integer, nullable=False, default=0)
+    unit_price = db.Column(db.Numeric(10, 2), nullable=False)  # Purchase price per unit
+    tax_percentage = db.Column(db.Numeric(5, 2), nullable=False, default=0)
+    discount_percentage = db.Column(db.Numeric(5, 2), nullable=False, default=0)
+    batch_number = db.Column(db.String(100), nullable=True)
+    expiry_date = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    purchase_order = db.relationship("PurchaseOrder", back_populates="items")
+    medicine = db.relationship("Medicine")
+
+    @property
+    def quantity_pending(self) -> int:
+        return max(0, self.quantity_ordered - self.quantity_received)
+
+    @property
+    def line_total(self) -> float:
+        price = float(self.unit_price) * self.quantity_ordered
+        tax = price * (float(self.tax_percentage) / 100)
+        discount = price * (float(self.discount_percentage) / 100)
+        return price + tax - discount
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "purchase_order_id": self.purchase_order_id,
+            "medicine_id": self.medicine_id,
+            "medicine_name": self.medicine.generic_name if self.medicine else None,
+            "brand_name": self.medicine.brand_name if self.medicine else None,
+            "strength": self.medicine.strength if self.medicine else None,
+            "dosage_form": self.medicine.dosage_form if self.medicine else None,
+            "quantity_ordered": self.quantity_ordered,
+            "quantity_received": self.quantity_received,
+            "quantity_pending": self.quantity_pending,
+            "unit_price": float(self.unit_price),
+            "tax_percentage": float(self.tax_percentage),
+            "discount_percentage": float(self.discount_percentage),
+            "line_total": self.line_total,
+            "batch_number": self.batch_number,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "notes": self.notes,
+        }
+
+
+class DispenseStatus(str, Enum):
+    PENDING = "pending"
+    PARTIAL = "partial"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    RETURNED = "returned"
+
+
+class Dispense(db.Model, TimestampMixin, SoftDeleteMixin):
+    """Medicine dispensing record (linked to prescription or walk-in sale)."""
+    __tablename__ = "dispenses"
+
+    id = db.Column(db.Integer, primary_key=True)
+    hospital_id = db.Column(db.Integer, db.ForeignKey("hospitals.id"), nullable=False, index=True)
+    prescription_id = db.Column(db.Integer, db.ForeignKey("prescriptions.id"), nullable=True, index=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey("patients.id"), nullable=True, index=True)
+    dispense_number = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    status = db.Column(db.Enum(DispenseStatus), default=DispenseStatus.PENDING, nullable=False, index=True)
+    dispense_date = db.Column(db.DateTime(timezone=True), default=utcnow, nullable=False)
+    total_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    discount_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    tax_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    payable_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    paid_amount = db.Column(db.Numeric(10, 2), nullable=False, default=0)
+    payment_method = db.Column(db.String(40), nullable=True)  # cash, card, bkash, etc.
+    notes = db.Column(db.Text, nullable=True)
+    dispensed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    verified_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True)
+
+    hospital = db.relationship("Hospital")
+    prescription = db.relationship("Prescription")
+    patient = db.relationship("Patient")
+    dispensed_by = db.relationship("User", foreign_keys=[dispensed_by_user_id])
+    verified_by = db.relationship("User", foreign_keys=[verified_by_user_id])
+    items = db.relationship("DispenseItem", back_populates="dispense", cascade="all, delete-orphan")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "hospital_id": self.hospital_id,
+            "prescription_id": self.prescription_id,
+            "patient_id": self.patient_id,
+            "patient_name": self.patient.user.full_name if self.patient and self.patient.user else None,
+            "dispense_number": self.dispense_number,
+            "status": self.status.value,
+            "dispense_date": self.dispense_date.isoformat() if self.dispense_date else None,
+            "total_amount": float(self.total_amount),
+            "discount_amount": float(self.discount_amount),
+            "tax_amount": float(self.tax_amount),
+            "payable_amount": float(self.payable_amount),
+            "paid_amount": float(self.paid_amount),
+            "payment_method": self.payment_method,
+            "notes": self.notes,
+            "dispensed_by": self.dispensed_by.full_name if self.dispensed_by else None,
+            "verified_by": self.verified_by.full_name if self.verified_by else None,
+            "items": [item.to_dict() for item in self.items],
+        }
+
+
+class DispenseItem(db.Model, TimestampMixin):
+    __tablename__ = "dispense_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dispense_id = db.Column(db.Integer, db.ForeignKey("dispenses.id"), nullable=False, index=True)
+    inventory_id = db.Column(db.Integer, db.ForeignKey("pharmacy_inventory.id"), nullable=False, index=True)
+    medicine_id = db.Column(db.Integer, db.ForeignKey("medicines.id"), nullable=False, index=True)
+    quantity = db.Column(db.Integer, nullable=False)
+    unit_price = db.Column(db.Numeric(10, 2), nullable=False)  # Selling price per unit at time of dispense
+    tax_percentage = db.Column(db.Numeric(5, 2), nullable=False, default=0)
+    discount_percentage = db.Column(db.Numeric(5, 2), nullable=False, default=0)
+    batch_number = db.Column(db.String(100), nullable=True)
+    expiry_date = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+
+    dispense = db.relationship("Dispense", back_populates="items")
+    inventory = db.relationship("PharmacyInventory")
+    medicine = db.relationship("Medicine")
+
+    @property
+    def line_total(self) -> float:
+        price = float(self.unit_price) * self.quantity
+        tax = price * (float(self.tax_percentage) / 100)
+        discount = price * (float(self.discount_percentage) / 100)
+        return price + tax - discount
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "dispense_id": self.dispense_id,
+            "inventory_id": self.inventory_id,
+            "medicine_id": self.medicine_id,
+            "medicine_name": self.medicine.generic_name if self.medicine else None,
+            "brand_name": self.medicine.brand_name if self.medicine else None,
+            "strength": self.medicine.strength if self.medicine else None,
+            "dosage_form": self.medicine.dosage_form if self.medicine else None,
+            "quantity": self.quantity,
+            "unit_price": float(self.unit_price),
+            "tax_percentage": float(self.tax_percentage),
+            "discount_percentage": float(self.discount_percentage),
+            "line_total": self.line_total,
+            "batch_number": self.batch_number,
+            "expiry_date": self.expiry_date.isoformat() if self.expiry_date else None,
+            "notes": self.notes,
         }

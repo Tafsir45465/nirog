@@ -5,7 +5,8 @@ from datetime import datetime, timedelta, timezone
 from app import create_app
 from app.extensions import db
 from app.models import (
-    User, UserRole, UserStatus, Hospital, Department, Specialty, Doctor,
+    User, Role, UserStatus, Hospital, Department, Specialty, Doctor,
+    DoctorHospitalAssignment, DoctorDepartmentAssignment,
     DoctorSchedule, Appointment, AppointmentStatus, Consultation,
     Prescription, PrescriptionStatus, Medicine, MedicalTest, utcnow
 )
@@ -27,20 +28,20 @@ class TestClinicalWorkflow(unittest.TestCase):
     def _seed_db(self):
         hospital = Hospital(
             name="Dhaka Central Hospital",
-            code="DCH-01",
+            slug="dch-01",
             address="Dhanmondi, Dhaka",
-            phone="+8801700000001",
+            phone="+880****0001",
             email="info@dhakacentral.com",
             is_active=True
         )
         db.session.add(hospital)
         db.session.flush()
 
-        spec_cardio = Specialty(name="Cardiology", code="CARD", description="Heart specialist")
+        spec_cardio = Specialty(name="Cardiology", description="Heart specialist")
         db.session.add(spec_cardio)
         db.session.flush()
 
-        dept = Department(hospital_id=hospital.id, name="Cardiology Dept", code="CARD-DEPT")
+        dept = Department(hospital_id=hospital.id, name="Cardiology Dept")
         db.session.add(dept)
         db.session.flush()
 
@@ -48,7 +49,7 @@ class TestClinicalWorkflow(unittest.TestCase):
             email="doctor@test.com",
             full_name="Dr. Sarah Khan",
             phone="01711111111",
-            role=UserRole.DOCTOR,
+            role=Role.DOCTOR,
             status=UserStatus.ACTIVE
         )
         doc_user.set_password("Doctor@123")
@@ -57,26 +58,35 @@ class TestClinicalWorkflow(unittest.TestCase):
 
         doc = Doctor(
             user_id=doc_user.id,
-            hospital_id=hospital.id,
-            department_id=dept.id,
             specialty_id=spec_cardio.id,
             license_number="BMDC-12345",
             consultation_fee=1000.0,
-            slot_duration_minutes=15,
-            verification_status="verified",
-            is_accepting_appointments=True
+            appointment_duration_minutes=15,
+            verification_status=UserStatus.ACTIVE,
         )
         db.session.add(doc)
         db.session.flush()
 
+        # Assign doctor to hospital
+        doc_hosp = DoctorHospitalAssignment(doctor_id=doc.id, hospital_id=hospital.id, is_active=True)
+        db.session.add(doc_hosp)
+        db.session.flush()
+
+        # Assign doctor to department
+        doc_dept = DoctorDepartmentAssignment(doctor_id=doc.id, department_id=dept.id, is_active=True)
+        db.session.add(doc_dept)
+        db.session.flush()
+
+        # Doctor schedule for all days 9am - 5pm
+        from datetime import time
         for day in range(7):
             sched = DoctorSchedule(
                 doctor_id=doc.id,
                 hospital_id=hospital.id,
-                day_of_week=day,
-                start_time="09:00",
-                end_time="17:00",
-                slot_duration_minutes=15,
+                weekday=day,
+                start_time=time(9, 0),
+                end_time=time(17, 0),
+                appointment_duration_minutes=15,
                 is_active=True
             )
             db.session.add(sched)
@@ -85,7 +95,7 @@ class TestClinicalWorkflow(unittest.TestCase):
             email="reception@test.com",
             full_name="Receptionist Rahima",
             phone="01722222222",
-            role=UserRole.RECEPTIONIST,
+            role=Role.RECEPTIONIST,
             status=UserStatus.ACTIVE
         )
         rec_user.set_password("Reception@123")
@@ -93,13 +103,31 @@ class TestClinicalWorkflow(unittest.TestCase):
         db.session.flush()
 
         from app.models import ReceptionistProfile, ReceptionistHospitalAssignment
-        rec_profile = ReceptionistProfile(user_id=rec_user.id, employee_id="REC-001")
+        rec_profile = ReceptionistProfile(user_id=rec_user.id, employee_code="REC-001")
         db.session.add(rec_profile)
         db.session.flush()
-        db.session.add(ReceptionistHospitalAssignment(receptionist_id=rec_profile.id, hospital_id=hospital.id, is_primary=True))
+        db.session.add(ReceptionistHospitalAssignment(receptionist_profile_id=rec_profile.id, hospital_id=hospital.id, is_active=True))
 
-        med = Medicine(brand_name="Napa Extra", generic_name="Paracetamol + Caffeine", strength="500mg+65mg", form="Tablet")
-        test = MedicalTest(name="Complete Blood Count (CBC)", code="CBC", category="Blood")
+        # Admin user
+        admin_user = User(
+            email="admin@test.com",
+            full_name="Hospital Admin",
+            phone="01733333333",
+            role=Role.ADMIN,
+            status=UserStatus.ACTIVE
+        )
+        admin_user.set_password("Admin@123")
+        db.session.add(admin_user)
+        db.session.flush()
+
+        from app.models import AdminProfile, AdminHospitalAssignment
+        admin_prof = AdminProfile(user_id=admin_user.id)
+        db.session.add(admin_prof)
+        db.session.flush()
+        db.session.add(AdminHospitalAssignment(admin_profile_id=admin_prof.id, hospital_id=hospital.id, is_active=True))
+
+        med = Medicine(generic_name="Paracetamol + Caffeine", brand_name="Napa Extra", strength="500mg+65mg", dosage_form="Tablet", is_active=True)
+        test = MedicalTest(name="Complete Blood Count (CBC)", category="Blood", is_active=True)
         db.session.add_all([med, test])
 
         db.session.commit()
@@ -115,7 +143,7 @@ class TestClinicalWorkflow(unittest.TestCase):
         # 1. Register a Patient
         resp = self.client.post('/api/auth/register', json={
             "full_name": "Test Patient",
-            "email": "patient@test.com",
+            "email": "patient@mail.com",
             "password": "Patient@123",
             "phone": "01799999999"
         })
@@ -125,12 +153,41 @@ class TestClinicalWorkflow(unittest.TestCase):
 
         # 2. Login Patient
         resp = self.client.post('/api/auth/login', json={
-            "email": "patient@test.com",
+            "email": "patient@mail.com",
             "password": "Patient@123"
         })
         self.assertEqual(resp.status_code, 200)
         pat_token = resp.get_json()["data"]["access_token"]
         pat_headers = {"Authorization": f"Bearer {pat_token}"}
+        login_data = resp.get_json()["data"]
+
+        # Get patient_id from the register response
+        patient_id = pat_data["data"]["patient"]["id"]
+
+        # Login as admin to create consent request
+        resp = self.client.post('/api/auth/login', json={
+            "email": "admin@test.com",
+            "password": "Admin@123"
+        })
+        self.assertEqual(resp.status_code, 200)
+        admin_token = resp.get_json()["data"]["access_token"]
+        admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+        # Create consent request via admin
+        resp = self.client.post('/api/consents/create', headers=admin_headers, json={
+            "patient_id": patient_id,
+            "hospital_id": self.seed_data["hospital_id"],
+            "consent_type": "treatment",
+            "title": "Treatment Consent",
+            "description": "I consent to medical treatment",
+            "version": "1.0"
+        })
+        self.assertEqual(resp.status_code, 201)
+        consent_id = resp.get_json()["data"]["id"]
+
+        # Grant consent as patient
+        resp = self.client.post(f'/api/consents/my/grant/{consent_id}', headers=pat_headers, json={})
+        self.assertEqual(resp.status_code, 200)
 
         # 3. Symptom recommendation
         resp = self.client.post('/api/recommend/specialty', json={

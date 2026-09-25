@@ -12,7 +12,10 @@ from app.models import (
     DoctorSchedule,
     Hospital,
     Medicine,
+    MedicineCategory,
     Patient,
+    PharmacistHospitalAssignment,
+    PharmacistProfile,
     ReceptionistHospitalAssignment,
     ReceptionistProfile,
     Specialty,
@@ -114,6 +117,24 @@ def seed():
             if dhaka_hosp:
                 db.session.add(ReceptionistHospitalAssignment(receptionist_profile_id=rec_prof.id, hospital_id=dhaka_hosp.id, is_active=True))
 
+        # Pharmacist
+        if not User.query.filter_by(email="pharmacist@dhaka.test").first():
+            pharm_user = User(
+                full_name="Dhaka Pharmacist",
+                email="pharmacist@dhaka.test",
+                role=Role.PHARMACIST,
+                status=UserStatus.ACTIVE,
+            )
+            pharm_user.set_password("Pharmacist@123")
+            db.session.add(pharm_user)
+            db.session.flush()
+            pharm_prof = PharmacistProfile(user_id=pharm_user.id, employee_code="PHARM-001", license_number="PHARM-LIC-001")
+            db.session.add(pharm_prof)
+            db.session.flush()
+            dhaka_hosp = hospital_map.get("dhaka-general")
+            if dhaka_hosp:
+                db.session.add(PharmacistHospitalAssignment(pharmacist_profile_id=pharm_prof.id, hospital_id=dhaka_hosp.id, is_active=True))
+
         # Patients
         patients = []
         for i in range(1, 6):
@@ -182,16 +203,44 @@ def seed():
                     ))
 
         # Medicines
+        # Create categories first
+        categories = {
+            "Analgesics": "Pain relief medications",
+            "Antibiotics": "Antibacterial medications",
+            "Antidiabetics": "Diabetes medications",
+            "Gastrointestinal": "Digestive system medications",
+        }
+        cat_map = {}
+        for name, desc in categories.items():
+            cat = MedicineCategory.query.filter_by(name=name).first()
+            if not cat:
+                cat = MedicineCategory(name=name, description=desc)
+                db.session.add(cat)
+            db.session.flush()
+            cat_map[name] = cat
+
         medicines = [
-            ("Paracetamol", "500 mg", "Tablet"),
-            ("Ibuprofen", "400 mg", "Tablet"),
-            ("Amoxicillin", "500 mg", "Capsule"),
-            ("Metformin", "850 mg", "Tablet"),
-            ("Omeprazole", "20 mg", "Capsule"),
+            ("Paracetamol", "500 mg", "Tablet", "Analgesics", 2.50, 1.20, 5.0, False, False),
+            ("Ibuprofen", "400 mg", "Tablet", "Analgesics", 3.00, 1.50, 5.0, False, False),
+            ("Amoxicillin", "500 mg", "Capsule", "Antibiotics", 12.00, 6.00, 5.0, True, False),
+            ("Metformin", "850 mg", "Tablet", "Antidiabetics", 8.00, 4.00, 5.0, True, False),
+            ("Omeprazole", "20 mg", "Capsule", "Gastrointestinal", 5.00, 2.50, 5.0, True, False),
         ]
-        for generic, strength, form in medicines:
+        for generic, strength, form, cat_name, unit_price, purchase_price, tax_pct, rx_only, controlled in medicines:
             if not Medicine.query.filter_by(generic_name=generic).first():
-                db.session.add(Medicine(generic_name=generic, brand_name=generic, strength=strength, dosage_form=form, is_active=True))
+                db.session.add(Medicine(
+                    generic_name=generic,
+                    brand_name=generic,
+                    strength=strength,
+                    dosage_form=form,
+                    category_id=cat_map[cat_name].id,
+                    unit_price=unit_price,
+                    purchase_price=purchase_price,
+                    tax_percentage=tax_pct,
+                    is_prescription_only=rx_only,
+                    controlled_substance=controlled,
+                    is_active=True,
+                ))
 
         db.session.commit()
         print("Seed complete")

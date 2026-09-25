@@ -19,6 +19,7 @@ from app.models import (
     utcnow,
 )
 from app.services.audit import log_action
+from app.services.notifications import notify
 from app.services.sse import sse_broker
 from app.services.push_notifications import send_push_notification
 from app.utils.responses import ok
@@ -95,7 +96,7 @@ def check_in(actor: User, appointment: Appointment, priority: int = 3) -> QueueT
         elif priority == 2:
             message = f"📋 Priority token generated: {token.token_number}. Estimated wait: {estimated_wait} minutes. Priority level: {priority_label}."
         else:
-            message = f"Your token is {token_number}. Estimated wait time: {estimated_wait} minutes. Priority level: {priority_label}. Appointment at {scheduled.strftime('%I:%M %p')}."
+            message = f"Your token is {token.token_number}. Estimated wait time: {estimated_wait} minutes. Priority level: {priority_label}. Appointment at {scheduled.strftime('%I:%M %p')}."
         notify(patient.user_id, "token_generated", "Queue token generated", message, {"token_id": token.id, "appointment_id": appointment.id, "priority_level": priority})
 
     # Audit log

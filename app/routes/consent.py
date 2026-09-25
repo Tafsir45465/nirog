@@ -234,7 +234,7 @@ def create_consent():
             created_by=user,
         )
         db.session.commit()
-        return ok(data=consent.to_dict(), message="Consent request created"), 201
+        return ok(data=consent.to_dict(), message="Consent request created", status=201)
     except Exception as e:
         db.session.rollback()
         raise AppError(f"Failed to create consent: {str(e)}", 500, "create_failed")

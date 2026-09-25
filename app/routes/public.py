@@ -34,7 +34,7 @@ def list_departments():
 
 @bp.get("/doctors")
 @bp.get("/doctors/search")
-@limiter.limit("90 per minute; 1,200 per hour", key_func=specialty_search_key)
+@limiter.limit("90 per minute, 1200 per hour", key_func=specialty_search_key)
 def search_doctors():
     args = request.args
     hospital_id = args.get("hospital_id", type=int)

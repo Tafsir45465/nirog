@@ -89,6 +89,8 @@ def hospital_ids_for_user(user: User) -> set[int]:
         return {a.hospital_id for a in user.doctor_profile.hospital_assignments if a.is_active}
     if user.role == Role.RECEPTIONIST and user.receptionist_profile:
         return {a.hospital_id for a in user.receptionist_profile.hospital_assignments if a.is_active}
+    if user.role == Role.PHARMACIST and user.pharmacist_profile:
+        return {a.hospital_id for a in user.pharmacist_profile.hospital_assignments if a.is_active}
     return set()
 
 
